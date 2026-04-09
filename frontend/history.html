@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>历史记录 - 无人机医药配送</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', sans-serif; background-color: #f5f7fa; }
+        :root { --nav-bg: #2c3e50; --nav-text: rgba(255, 255, 255, 0.92); --nav-hover: rgba(255, 255, 255, 0.1); --nav-active: #3498db; }
+        .navbar { background-color: var(--nav-bg); color: white; min-height: 74px; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; gap: 2rem; }
+        .logo { font-size: 1.5rem; font-weight: bold; white-space: nowrap; }
+        .nav-links { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+        .nav-links a { color: var(--nav-text); text-decoration: none; min-height: 40px; padding: 0.55rem 1rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; transition: background-color 0.25s, color 0.25s, transform 0.25s; }
+        .nav-links a:hover { background-color: var(--nav-hover); color: white; transform: translateY(-1px); }
+        .nav-links a.active { background-color: var(--nav-active); color: white; box-shadow: 0 8px 20px rgba(52, 152, 219, 0.28); }
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
+        .history-table { background: white; padding: 1.5rem; border-radius: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f8f9fa; }
+        .priority-badge { padding: 0.3rem 0.8rem; border-radius: 20px; color: white; font-size: 0.8rem; }
+        .priority-badge.high { background: #e74c3c; }
+        .priority-badge.medium { background: #f39c12; }
+        .priority-badge.low { background: #27ae60; }
+        .status-badge { padding: 0.3rem 0.8rem; border-radius: 20px; background: #d4edda; color: #155724; }
+        .btn { background: #3498db; color: white; padding: 0.5rem 1rem; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 1rem; }
+        .footer { background: #2c3e50; color: white; text-align: center; padding: 2rem; margin-top: 3rem; }
+        @media (max-width: 900px) {
+            .navbar { padding: 1rem; align-items: flex-start; flex-direction: column; }
+            .nav-links { width: 100%; gap: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🍃 无人机医药配送</div>
+        <div class="nav-links">
+            <a href="index.html">首页</a>
+            <a href="order.html">发起配送</a>
+            <a href="schedule.html">调度演示</a>
+            <a href="monitor.html">实时监控</a>
+            <a href="history.html" class="active">历史记录</a>
+        </div>
+    </nav>
+    <div class="container">
+        <h1>历史配送记录</h1>
+        <button class="btn" onclick="loadHistory()">刷新</button>
+        <div class="history-table">
+            <table><thead><tr><th>时间</th><th>药品</th><th>地点</th><th>优先级</th><th>状态</th></tr></thead><tbody id="historyBody"><tr><td colspan="5">加载中...</td></tr></tbody></table>
+        </div>
+    </div>
+    <footer class="footer"><p>© 2025 校园无人机医药配送系统</p></footer>
+    <script>
+        const API = window.location.protocol === 'file:'
+            ? 'http://127.0.0.1:5000'
+            : window.location.origin;
+        async function loadHistory() {
+            try {
+                const res = await fetch(API+'/api/orders');
+                const data = await res.json();
+                const tbody = document.getElementById('historyBody');
+                if(data.success && data.orders.length>0) {
+                    tbody.innerHTML = '';
+                    data.orders.forEach(o=>{
+                        const cls = o.priority==='高'?'high':(o.priority==='中'?'medium':'low');
+                        tbody.innerHTML += `<tr><td>${o.create_time||'未知'}</td><td>${o.medicine}</td><td>${o.location}</td><td><span class="priority-badge ${cls}">${o.priority}</span></td><td><span class="status-badge">${o.status}</span></td></tr>`;
+                    });
+                } else { tbody.innerHTML = '<tr><td colspan="5">暂无历史记录</td></tr>'; }
+            } catch(e) { document.getElementById('historyBody').innerHTML = '<tr><td colspan="5">连接失败</td></tr>'; }
+        }
+        loadHistory();
+    </script>
+</body>
+</html>

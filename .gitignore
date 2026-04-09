@@ -1,0 +1,11 @@
+.vs/
+__pycache__/
+*.py[cod]
+*.pyc.*
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+.env
+backend/orders.db

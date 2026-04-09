@@ -1,0 +1,65 @@
+{
+    "name": "校园地图（演示版）",
+    "description": "无人机配送系统测试用地图",
+    "points": [
+      {
+        "id": 1,
+        "name": "校医院",
+        "x": 500,
+        "y": 400,
+        "type": "depot",
+        "description": "无人机起飞点，药品取货点"
+      },
+      {
+        "id": 2,
+        "name": "宿舍A区",
+        "x": 300,
+        "y": 200,
+        "type": "delivery",
+        "description": "学生宿舍，常见配送点"
+      },
+      {
+        "id": 3,
+        "name": "宿舍B区",
+        "x": 700,
+        "y": 200,
+        "type": "delivery",
+        "description": "学生宿舍，常见配送点"
+      },
+      {
+        "id": 4,
+        "name": "教学楼",
+        "x": 200,
+        "y": 500,
+        "type": "delivery",
+        "description": "教学楼，师生上课地点"
+      },
+      {
+        "id": 5,
+        "name": "体育馆",
+        "x": 800,
+        "y": 500,
+        "type": "delivery",
+        "description": "体育馆，运动损伤常用药"
+      },
+      {
+        "id": 6,
+        "name": "图书馆",
+        "x": 500,
+        "y": 600,
+        "type": "delivery",
+        "description": "图书馆，自习区域"
+      }
+    ],
+    "connections": [
+      {"from": "校医院", "to": "宿舍A区", "distance": 283},
+      {"from": "校医院", "to": "宿舍B区", "distance": 283},
+      {"from": "校医院", "to": "教学楼", "distance": 316},
+      {"from": "校医院", "to": "体育馆", "distance": 316},
+      {"from": "校医院", "to": "图书馆", "distance": 200},
+      {"from": "宿舍A区", "to": "教学楼", "distance": 316},
+      {"from": "宿舍A区", "to": "宿舍B区", "distance": 447},
+      {"from": "宿舍B区", "to": "体育馆", "distance": 316},
+      {"from": "教学楼", "to": "图书馆", "distance": 316}
+    ]
+  }

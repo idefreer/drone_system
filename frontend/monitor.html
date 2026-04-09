@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时监控 - 无人机医药配送</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', sans-serif; background-color: #f5f7fa; }
+        :root { --nav-bg: #2c3e50; --nav-text: rgba(255, 255, 255, 0.92); --nav-hover: rgba(255, 255, 255, 0.1); --nav-active: #3498db; }
+        .navbar { background-color: var(--nav-bg); color: white; min-height: 74px; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; gap: 2rem; }
+        .logo { font-size: 1.5rem; font-weight: bold; white-space: nowrap; }
+        .nav-links { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+        .nav-links a { color: var(--nav-text); text-decoration: none; min-height: 40px; padding: 0.55rem 1rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; transition: background-color 0.25s, color 0.25s, transform 0.25s; }
+        .nav-links a:hover { background-color: var(--nav-hover); color: white; transform: translateY(-1px); }
+        .nav-links a.active { background-color: var(--nav-active); color: white; box-shadow: 0 8px 20px rgba(52, 152, 219, 0.28); }
+        .container { max-width: 1400px; margin: 2rem auto; padding: 0 2rem; }
+        .page-header { margin-bottom: 2rem; }
+        .page-header h1 { color: #2c3e50; margin-bottom: 0.5rem; }
+        .page-header p { color: #5d6d7e; }
+        .monitor-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+        .map-container { background: white; padding: 1rem; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        #map { height: 500px; width: 100%; border-radius: 5px; }
+        .map-hint { margin-top: 0.9rem; color: #5d6d7e; line-height: 1.6; }
+        .status-panel { background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .panel-title { color: #2c3e50; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid #3498db; }
+        .sub-panel { margin-bottom: 1rem; padding: 1rem; border-radius: 8px; background: #f8fafc; border: 1px solid #e4ebf3; }
+        .sub-panel h4 { color: #2c3e50; margin-bottom: 0.6rem; }
+        .sub-panel p { color: #5d6d7e; line-height: 1.6; font-size: 0.95rem; }
+        .drone-card { background: #f8f9fa; padding: 1rem; border-radius: 5px; margin-bottom: 1rem; border-left: 4px solid #27ae60; }
+        .drone-card.flying { border-left-color: #3498db; }
+        .drone-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .drone-name { font-weight: bold; color: #2c3e50; }
+        .drone-status { padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.8rem; color: white; }
+        .status-idle { background-color: #27ae60; }
+        .status-flying { background-color: #3498db; }
+        .drone-info { font-size: 0.9rem; color: #7f8c8d; }
+        .drone-info div { margin-bottom: 0.3rem; }
+        .battery-bar { width: 100%; height: 6px; background-color: #ecf0f1; border-radius: 3px; margin-top: 0.5rem; }
+        .battery-level { height: 100%; background-color: #27ae60; border-radius: 3px; width: 0%; }
+        .progress-info { margin-top: 1rem; padding: 0.8rem; background: #e8f4fd; border-radius: 5px; font-size: 0.9rem; }
+        .decision-panel { margin-top: 1rem; padding: 0.8rem; background: #f0f7ff; border-radius: 5px; font-size: 0.9rem; border-left: 4px solid #3498db; }
+        .decision-panel strong { color: #2c3e50; }
+        .decision-panel ul { margin-top: 8px; padding-left: 20px; }
+        .decision-panel li { margin-bottom: 4px; }
+        .btn { background-color: #3498db; color: white; padding: 0.8rem 1.5rem; border: none; border-radius: 5px; cursor: pointer; font-size: 1rem; width: 100%; margin-top: 1rem; transition: background-color 0.3s; }
+        .btn:hover { background-color: #2980b9; }
+        .btn-secondary { background-color: #16a085; }
+        .btn-secondary:hover { background-color: #12806a; }
+        .btn-muted { background-color: #95a5a6; }
+        .btn-muted:hover { background-color: #7f8c8d; }
+        .btn-danger { background-color: #e74c3c; }
+        .btn-danger:hover { background-color: #c0392b; }
+        .btn:disabled { background-color: #a5b8c9; cursor: not-allowed; }
+        .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+        .button-row.triple { grid-template-columns: repeat(3, 1fr); }
+        .button-row.single { grid-template-columns: 1fr; }
+        .status-box { margin-top: 0.8rem; padding: 0.9rem; border-radius: 6px; background: #eef6ff; border: 1px solid #d5e6ff; color: #214c7a; line-height: 1.6; font-size: 0.95rem; }
+        .footer { background-color: #2c3e50; color: white; text-align: center; padding: 2rem; margin-top: 3rem; }
+        @media (max-width: 980px) {
+            .navbar { padding: 1rem; align-items: flex-start; flex-direction: column; }
+            .nav-links { width: 100%; gap: 0.5rem; }
+            .monitor-grid { grid-template-columns: 1fr; }
+            .button-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🍃 无人机医药配送</div>
+        <div class="nav-links">
+            <a href="index.html">首页</a>
+            <a href="order.html">发起配送</a>
+            <a href="schedule.html">调度演示</a>
+            <a href="monitor.html" class="active">实时监控</a>
+            <a href="history.html">历史记录</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>实时监控</h1>
+            <p>高德地图底图 + 无人机实时监控 | 🤖 豆包大模型智能决策</p>
+        </div>
+
+        <div class="monitor-grid">
+            <div class="map-container">
+                <div id="map"></div>
+                <div class="map-hint">
+                    操作方式：点击“开始圈定范围”后，在地图上连续点击多个顶点；点够 3 个以后点击“保存范围”即可生效。圈定过程中支持拖动橙色顶点微调，也可以撤销上一个点。
+                </div>
+            </div>
+
+            <div class="status-panel">
+                <h3 class="panel-title">配送范围</h3>
+                <div class="sub-panel">
+                    <h4>地图圈定</h4>
+                    <p>保存后，下单页只允许选择范围内的地点，调度页也只会规划范围内的待配送订单。</p>
+                    <div class="button-row">
+                        <button id="drawBtn" class="btn btn-secondary">开始圈定范围</button>
+                        <button id="saveAreaBtn" class="btn" disabled>保存范围</button>
+                    </div>
+                    <div class="button-row triple">
+                        <button id="undoPointBtn" class="btn btn-muted" disabled>撤销上一个点</button>
+                        <button id="cancelDrawBtn" class="btn btn-muted" disabled>取消本次圈定</button>
+                        <button id="clearAreaBtn" class="btn btn-danger">清空已保存范围</button>
+                    </div>
+                    <div id="areaStatus" class="status-box">当前未启用配送范围，系统默认所有配送点都可用。</div>
+                </div>
+
+                <h3 class="panel-title">🚁 无人机状态</h3>
+                <div id="droneCard"></div>
+                
+                <!-- 豆包决策面板 -->
+                <div id="decisionPanel" class="decision-panel" style="display:none;">
+                    <strong>🤖 豆包大模型决策</strong>
+                    <div id="decisionContent"></div>
+                </div>
+                
+                <div id="routeInfo" class="progress-info" style="display:none;">
+                    <strong>📋 当前航线</strong><br>
+                    <span id="routeDetail"></span>
+                </div>
+                
+                <div id="progressInfo" class="progress-info" style="display:none;">
+                    <strong>📍 飞行进度</strong><br>
+                    <span id="progressDetail"></span>
+                </div>
+                
+                <div class="button-row single">
+                    <button id="startBtn" class="btn">✈️ 开始执行配送</button>
+                    <button id="stopBtn" class="btn btn-danger">⏹️ 停止飞行</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>© 2025 校园无人机医药配送系统 | 决策由豆包大模型生成</p>
+    </footer>
+
+    <script>
+        const API_BASE_URL = window.location.protocol === 'file:'
+            ? 'http://127.0.0.1:5000'
+            : window.location.origin;
+        const BACKEND_CONNECTION_HINT = window.location.protocol === 'file:'
+            ? '请确认后端 Flask 已启动在 http://127.0.0.1:5000'
+            : `请确认当前页面是通过 ${window.location.origin} 打开的，并且后端 Flask 正在运行`;
+        const FALLBACK_AMAP_JS_KEY = '';
+
+        let map;
+        let amapConfig;
+        let infoWindow;
+        let droneMarker;
+        let routeLine;
+        let serviceAreaPolygon;
+        let draftLine;
+        let draftPolygon;
+        let draftMarkers = [];
+        let locationMarkers = {};
+        let isDrawingArea = false;
+        let drawingLngLats = [];
+        let isFlying = false;
+        let currentWaypointIndex = 0;
+        let waypoints = [];
+        let currentDrone = {
+            id: '无人机001',
+            battery: 100,
+            status: '空闲',
+            speed: 10,
+            location: [500, 400]
+        };
+        
+        const pointsMap = {
+            '校医院': [500, 400],
+            '宿舍A区': [300, 200],
+            '宿舍B区': [700, 200],
+            '教学楼': [200, 500],
+            '体育馆': [800, 500],
+            '图书馆': [500, 600]
+        };
+        
+        function toLatLng(x, y) {
+            let lng = 116.35 + (x / 1000) * 0.1;
+            let lat = 39.88 + (y / 1000) * 0.05;
+            return [lat, lng];
+        }
+
+        function toLngLat(x, y) {
+            const [lat, lng] = toLatLng(x, y);
+            return [lng, lat];
+        }
+
+        function toXY(lat, lng) {
+            const x = ((lng - 116.35) / 0.1) * 1000;
+            const y = ((lat - 39.88) / 0.05) * 1000;
+            return [x, y];
+        }
+
+        function toPlainLngLat(value) {
+            if (Array.isArray(value)) {
+                return { lng: value[0], lat: value[1] };
+            }
+            if (value && typeof value.getLng === 'function') {
+                return { lng: value.getLng(), lat: value.getLat() };
+            }
+            return { lng: value.lng, lat: value.lat };
+        }
+
+        function lngLatToVertex(lngLat) {
+            const point = toPlainLngLat(lngLat);
+            const [x, y] = toXY(point.lat, point.lng);
+            return {
+                x: Number(x.toFixed(2)),
+                y: Number(y.toFixed(2)),
+                lat: Number(point.lat.toFixed(6)),
+                lng: Number(point.lng.toFixed(6))
+            };
+        }
+
+        async function fetchAmapConfig() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/amap/config`);
+                const result = await response.json();
+                if (result.success && result.js_api_key) {
+                    return result;
+                }
+            } catch (error) {
+                console.warn('从后端读取高德配置失败，改用前端兜底 Key:', error);
+            }
+
+            return {
+                success: true,
+                js_api_key: FALLBACK_AMAP_JS_KEY,
+                security_js_code: '',
+                js_api_configured: true,
+                web_service_configured: false,
+                from_fallback: true
+            };
+        }
+
+        async function loadAmapSdk() {
+            if (window.AMap) {
+                return window.AMap;
+            }
+
+            amapConfig = await fetchAmapConfig();
+            if (!amapConfig.js_api_key) {
+                throw new Error('未配置高德地图 JS Key，请先在环境变量中设置 AMAP_JS_API_KEY');
+            }
+            if (amapConfig.security_js_code) {
+                window._AMapSecurityConfig = {
+                    securityJsCode: amapConfig.security_js_code
+                };
+            }
+
+            await new Promise((resolve, reject) => {
+                const existingScript = document.querySelector('script[data-amap-sdk="true"]');
+                if (existingScript) {
+                    existingScript.addEventListener('load', resolve, { once: true });
+                    existingScript.addEventListener('error', reject, { once: true });
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(amapConfig.js_api_key)}`;
+                script.async = true;
+                script.defer = true;
+                script.dataset.amapSdk = 'true';
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('高德地图 JS SDK 加载失败'));
+                document.head.appendChild(script);
+            });
+
+            return window.AMap;
+        }
+
+        function isPointOnSegment(point, start, end) {
+            const tolerance = 1e-9;
+            const cross = (point.lng - start.lng) * (end.lat - start.lat) - (point.lat - start.lat) * (end.lng - start.lng);
+            if (Math.abs(cross) > tolerance) {
+                return false;
+            }
+
+            const dot = (point.lng - start.lng) * (end.lng - start.lng) + (point.lat - start.lat) * (end.lat - start.lat);
+            if (dot < 0) {
+                return false;
+            }
+
+            const squaredLength = (end.lng - start.lng) ** 2 + (end.lat - start.lat) ** 2;
+            return dot <= squaredLength + tolerance;
+        }
+
+        function isPointInPolygon(point, polygon) {
+            if (!polygon || polygon.length < 3) {
+                return false;
+            }
+
+            let inside = false;
+            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                const current = polygon[i];
+                const previous = polygon[j];
+
+                if (isPointOnSegment(point, previous, current)) {
+                    return true;
+                }
+
+                const crosses = ((current.lat > point.lat) !== (previous.lat > point.lat));
+                if (!crosses) {
+                    continue;
+                }
+
+                const crossLng = ((previous.lng - current.lng) * (point.lat - current.lat)) / ((previous.lat - current.lat) || 1e-9) + current.lng;
+                if (point.lng < crossLng) {
+                    inside = !inside;
+                }
+            }
+
+            return inside;
+        }
+        
+        async function initMap() {
+            const AMap = await loadAmapSdk();
+            map = new AMap.Map('map', {
+                zoom: 15,
+                center: toLngLat(500, 400),
+                viewMode: '2D',
+                mapStyle: 'amap://styles/normal'
+            });
+            infoWindow = new AMap.InfoWindow({ offset: new AMap.Pixel(0, -25) });
+
+            for (let [name, pos] of Object.entries(pointsMap)) {
+                const marker = new AMap.Marker({
+                    position: toLngLat(pos[0], pos[1]),
+                    title: name,
+                    content: createLocationMarkerContent(true)
+                });
+                marker.setMap(map);
+                marker.setExtData({ name, status: '可配送' });
+                marker.on('click', () => openMarkerInfo(marker));
+                locationMarkers[name] = marker;
+            }
+
+            droneMarker = new AMap.Marker({
+                position: toLngLat(500, 400),
+                offset: new AMap.Pixel(-15, -15),
+                content: '<div style="font-size:30px;line-height:30px;">🚁</div>'
+            });
+            droneMarker.setMap(map);
+
+            map.on('click', handleMapClick);
+            updateDroneDisplay();
+        }
+
+        function openMarkerInfo(marker) {
+            if (!infoWindow) {
+                return;
+            }
+
+            const extData = marker.getExtData() || {};
+            infoWindow.setContent(`
+                <div style="padding:6px 10px;line-height:1.6;">
+                    <strong>${extData.name || marker.getTitle()}</strong><br>
+                    状态：${extData.status || '可配送'}
+                </div>
+            `);
+            infoWindow.open(map, marker.getPosition());
+        }
+
+        function createLocationMarkerContent(inRange) {
+            const fillColor = inRange ? '#3498db' : '#b6c2cf';
+            const ringColor = inRange ? '#ffffff' : '#e9eef3';
+            const opacity = inRange ? 1 : 0.45;
+            return `
+                <div style="transform:translate(-50%,-100%);opacity:${opacity};">
+                    <div style="width:18px;height:18px;border-radius:50%;background:${fillColor};border:3px solid ${ringColor};box-shadow:0 6px 14px rgba(0,0,0,0.18);"></div>
+                </div>
+            `;
+        }
+        
+        function updateDroneDisplay() {
+            const statusClass = currentDrone.status === '空闲' ? 'status-idle' : 'status-flying';
+            const statusText = currentDrone.status === '空闲' ? '空闲' : '飞行中';
+            const cardClass = currentDrone.status === '空闲' ? '' : 'flying';
+            
+            document.getElementById('droneCard').innerHTML = `
+                <div class="drone-card ${cardClass}">
+                    <div class="drone-header">
+                        <span class="drone-name">${currentDrone.id}</span>
+                        <span class="drone-status ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="drone-info">
+                        <div>⚡ 电量 ${currentDrone.battery.toFixed(1)}%</div>
+                        <div>📊 速度 ${currentDrone.speed} m/s</div>
+                        <div>📍 航点: ${currentWaypointIndex + 1}/${waypoints.length}</div>
+                    </div>
+                    <div class="battery-bar">
+                        <div class="battery-level" style="width: ${currentDrone.battery}%"></div>
+                    </div>
+                </div>
+            `;
+            
+            if (droneMarker) {
+                droneMarker.setPosition(toLngLat(currentDrone.location[0], currentDrone.location[1]));
+            }
+        }
+
+        function updateAreaButtons() {
+            document.getElementById('drawBtn').disabled = isDrawingArea;
+            document.getElementById('saveAreaBtn').disabled = !isDrawingArea || drawingLngLats.length < 3;
+            document.getElementById('undoPointBtn').disabled = !isDrawingArea || drawingLngLats.length === 0;
+            document.getElementById('cancelDrawBtn').disabled = !isDrawingArea;
+        }
+
+        function clearDraftArea() {
+            if (draftLine) {
+                draftLine.setMap(null);
+                draftLine = null;
+            }
+
+            if (draftPolygon) {
+                draftPolygon.setMap(null);
+                draftPolygon = null;
+            }
+
+            draftMarkers.forEach(marker => marker.setMap(null));
+            draftMarkers = [];
+        }
+
+        function updateDrawingStatus() {
+            const areaStatus = document.getElementById('areaStatus');
+            if (!isDrawingArea) {
+                return;
+            }
+
+            const tips = [];
+            if (drawingLngLats.length < 3) {
+                tips.push(`至少还需要 ${3 - drawingLngLats.length} 个点`);
+            } else {
+                tips.push('已经可以保存范围');
+            }
+            if (drawingLngLats.length > 0) {
+                tips.push('可拖动橙色顶点微调');
+            }
+            if (drawingLngLats.length > 1) {
+                tips.push('可用“撤销上一个点”回退');
+            }
+
+            areaStatus.innerHTML = `正在圈定配送范围：已选择 ${drawingLngLats.length} 个顶点。<br>${tips.join('，')}。`;
+        }
+
+        function buildDraftMarker(lngLat, index) {
+            const marker = new AMap.Marker({
+                position: lngLat,
+                draggable: true,
+                cursor: 'move',
+                offset: new AMap.Pixel(-6, -6),
+                content: '<div style="width:12px;height:12px;border-radius:50%;background:#f39c12;border:2px solid #e67e22;box-shadow:0 0 0 3px rgba(243, 156, 18, 0.18);"></div>'
+            });
+            marker.setExtData({ index });
+            marker.on('dragging', handleDraftMarkerDrag);
+            marker.on('dragend', handleDraftMarkerDrag);
+            marker.setMap(map);
+            return marker;
+        }
+
+        function rebuildDraftMarkers() {
+            draftMarkers.forEach(marker => marker.setMap(null));
+            draftMarkers = drawingLngLats.map((lngLat, index) => buildDraftMarker(lngLat, index));
+        }
+
+        function updateDraftOverlay() {
+            if (draftLine) {
+                draftLine.setMap(null);
+                draftLine = null;
+            }
+
+            if (draftPolygon) {
+                draftPolygon.setMap(null);
+                draftPolygon = null;
+            }
+
+            if (drawingLngLats.length >= 3) {
+                draftPolygon = new AMap.Polygon({
+                    path: drawingLngLats,
+                    strokeColor: '#e67e22',
+                    strokeWeight: 3,
+                    fillColor: '#f39c12',
+                    fillOpacity: 0.14
+                });
+                draftPolygon.setMap(map);
+                return;
+            }
+
+            if (drawingLngLats.length >= 2) {
+                draftLine = new AMap.Polyline({
+                    path: drawingLngLats,
+                    strokeColor: '#e67e22',
+                    strokeWeight: 4,
+                    strokeStyle: 'dashed'
+                });
+                draftLine.setMap(map);
+            }
+        }
+
+        function refreshDraftArea() {
+            rebuildDraftMarkers();
+            updateDraftOverlay();
+            updateAreaButtons();
+            updateDrawingStatus();
+        }
+
+        function startDrawingArea() {
+            isDrawingArea = true;
+            drawingLngLats = [];
+            clearDraftArea();
+            updateAreaButtons();
+            document.getElementById('areaStatus').innerHTML = '正在圈定配送范围：请在地图上依次点击顶点，至少 3 个点后点击“保存范围”。支持拖动顶点微调，也支持撤销上一个点。';
+        }
+
+        function cancelDrawingArea() {
+            isDrawingArea = false;
+            drawingLngLats = [];
+            clearDraftArea();
+            updateAreaButtons();
+            loadServiceArea();
+        }
+
+        function handleMapClick(event) {
+            if (!isDrawingArea) {
+                return;
+            }
+
+            drawingLngLats.push(event.lnglat);
+            refreshDraftArea();
+        }
+
+        function handleDraftMarkerDrag(event) {
+            const marker = event.target;
+            const index = marker.getExtData()?.index;
+            if (index == null) {
+                return;
+            }
+
+            drawingLngLats[index] = event.lnglat;
+            updateDraftOverlay();
+            updateDrawingStatus();
+        }
+
+        function undoLastPoint() {
+            if (!isDrawingArea || drawingLngLats.length === 0) {
+                return;
+            }
+
+            drawingLngLats.pop();
+            if (drawingLngLats.length === 0) {
+                clearDraftArea();
+                updateAreaButtons();
+                document.getElementById('areaStatus').innerHTML = '正在圈定配送范围：已撤销到空白状态，请重新点击地图添加顶点。';
+                return;
+            }
+
+            refreshDraftArea();
+        }
+
+        function renderServiceArea(serviceArea) {
+            if (serviceAreaPolygon) {
+                serviceAreaPolygon.setMap(null);
+                serviceAreaPolygon = null;
+            }
+
+            if (!serviceArea || !serviceArea.points || serviceArea.points.length < 3) {
+                return;
+            }
+
+            const path = serviceArea.points.map(point => {
+                if (point.lat != null && point.lng != null) {
+                    return [point.lng, point.lat];
+                }
+                return toLngLat(point.x, point.y);
+            });
+
+            serviceAreaPolygon = new AMap.Polygon({
+                path,
+                strokeColor: '#e67e22',
+                strokeWeight: 3,
+                fillColor: '#f39c12',
+                fillOpacity: 0.18
+            });
+            serviceAreaPolygon.setMap(map);
+        }
+
+        function applyServiceAreaMeta(meta) {
+            const areaStatus = document.getElementById('areaStatus');
+            const allowedLocations = new Set(meta.allowed_locations || []);
+            const polygon = (meta.service_area?.points || []).map(point => ({
+                lat: point.lat ?? toLatLng(point.x, point.y)[0],
+                lng: point.lng ?? toLatLng(point.x, point.y)[1]
+            }));
+
+            if (meta.active && meta.service_area) {
+                areaStatus.innerHTML = `
+                    当前已启用配送范围，共 ${meta.service_area.points.length} 个顶点。<br>
+                    当前允许配送点：${meta.allowed_locations.length ? meta.allowed_locations.join('、') : '暂无'}<br>
+                    高德地图：已连接${amapConfig?.from_fallback ? '（前端兜底模式）' : ''}
+                `;
+                renderServiceArea(meta.service_area);
+            } else {
+                areaStatus.innerHTML = `当前未启用配送范围，系统默认所有配送点都可用。<br>高德地图：已连接${amapConfig?.from_fallback ? '（前端兜底模式）' : ''}`;
+                if (serviceAreaPolygon) {
+                    serviceAreaPolygon.setMap(null);
+                    serviceAreaPolygon = null;
+                }
+            }
+
+            Object.entries(locationMarkers).forEach(([name, marker]) => {
+                const position = toPlainLngLat(marker.getPosition());
+                const inRange = !meta.active || name === '校医院' || allowedLocations.has(name) || isPointInPolygon(position, polygon);
+                marker.setContent(createLocationMarkerContent(inRange));
+                marker.setExtData({
+                    name,
+                    status: inRange ? '可配送' : '当前范围外'
+                });
+            });
+        }
+
+        async function loadServiceArea() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/service-area`);
+                const result = await response.json();
+                if (result.success) {
+                    applyServiceAreaMeta(result);
+                }
+            } catch (error) {
+                console.error('加载配送范围失败:', error);
+                document.getElementById('areaStatus').innerHTML = `加载配送范围失败：${error.message}<br>${BACKEND_CONNECTION_HINT}`;
+            }
+        }
+
+        async function saveServiceArea() {
+            if (drawingLngLats.length < 3) {
+                alert('至少需要 3 个点才能围成配送范围。');
+                return;
+            }
+
+            const points = drawingLngLats.map(lngLatToVertex);
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/service-area`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ points })
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert(result.message || '保存配送范围失败');
+                    return;
+                }
+
+                isDrawingArea = false;
+                drawingLngLats = [];
+                clearDraftArea();
+                updateAreaButtons();
+                applyServiceAreaMeta(result);
+            } catch (error) {
+                console.error('保存配送范围失败:', error);
+                alert(`保存配送范围失败：${error.message}。${BACKEND_CONNECTION_HINT}`);
+            }
+        }
+
+        async function clearServiceArea() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/service-area`, { method: 'DELETE' });
+                const result = await response.json();
+                if (!result.success) {
+                    alert(result.message || '清空配送范围失败');
+                    return;
+                }
+
+                isDrawingArea = false;
+                drawingLngLats = [];
+                clearDraftArea();
+                updateAreaButtons();
+                applyServiceAreaMeta(result);
+            } catch (error) {
+                console.error('清空配送范围失败:', error);
+                alert(`清空配送范围失败：${error.message}。${BACKEND_CONNECTION_HINT}`);
+            }
+        }
+        
+        // 显示豆包决策
+        function showDecision(routeData) {
+            let decisionHtml = '';
+            
+            // 显示任务顺序
+            if (routeData.tasks_order && routeData.tasks_order.length > 0) {
+                decisionHtml += '<strong>📋 配送顺序：</strong><ul>';
+                routeData.tasks_order.forEach(task => {
+                    decisionHtml += `<li><strong>${task.order}.</strong> ${task.location} — ${task.reason || '优先级排序'}</li>`;
+                });
+                decisionHtml += '</ul>';
+            }
+            
+            // 显示路线摘要
+            if (routeData.route_summary) {
+                decisionHtml += `<strong>📏 路线评估：</strong><br>`;
+                decisionHtml += `总距离 ${routeData.route_summary.total_distance} 米 | 预计 ${routeData.route_summary.total_time} 秒<br>`;
+            }
+
+            if (routeData.service_area?.active) {
+                decisionHtml += `<strong>🧭 配送范围：</strong><br>`;
+                decisionHtml += `本次仅在 ${routeData.service_area.allowed_locations.join('、') || '当前范围'} 内规划`;
+                if (routeData.service_area.excluded_waiting_orders) {
+                    decisionHtml += `，已忽略 ${routeData.service_area.excluded_waiting_orders} 个范围外待配送订单`;
+                }
+                decisionHtml += '<br>';
+            }
+            
+            // 显示飞行路径
+            if (routeData.flight_path && routeData.flight_path.length > 0) {
+                decisionHtml += `<strong>✈️ 飞行路径：</strong><br>`;
+                routeData.flight_path.forEach((seg, i) => {
+                    decisionHtml += `${i+1}. ${seg.from} → ${seg.to} (${seg.distance}米)<br>`;
+                });
+            }
+            
+            if (decisionHtml) {
+                document.getElementById('decisionContent').innerHTML = decisionHtml;
+                document.getElementById('decisionPanel').style.display = 'block';
+            }
+        }
+        
+        async function fetchRoute() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/plan-route`, { method: 'POST' });
+                const data = await response.json();
+                
+                console.log('🤖 豆包返回:', data);
+                
+                if (data.success) {
+                    let routeData = data.route || data;
+                    
+                    if (routeData.waypoints && routeData.waypoints.length > 0) {
+                        waypoints = routeData.waypoints;
+                        
+                        // 显示豆包决策
+                        showDecision(routeData);
+                        
+                        document.getElementById('routeInfo').style.display = 'block';
+                        document.getElementById('routeDetail').innerHTML = `
+                            总距离: ${routeData.route_summary?.total_distance || '?'} 米<br>
+                            预计时间: ${routeData.route_summary?.total_time || '?'} 秒<br>
+                            航点数量: ${waypoints.length}<br>
+                            路线: ${waypoints.map(w => w.name).join(' → ')}<br>
+                            备注: ${routeData.note || '无'}
+                        `;
+                        drawRoute();
+                        return true;
+                    } else {
+                        alert('获取路线失败：waypoints为空');
+                        return false;
+                    }
+                } else {
+                    alert('获取路线失败：' + (data.message || '请先下单'));
+                    return false;
+                }
+            } catch (error) {
+                console.error('获取路线失败:', error);
+                alert('获取路线失败，请确保后端已启动');
+                return false;
+            }
+        }
+        
+        function drawRoute() {
+            if (routeLine) {
+                routeLine.setMap(null);
+            }
+            routeLine = new AMap.Polyline({
+                path: waypoints.map(w => toLngLat(w.x, w.y)),
+                strokeColor: '#3498db',
+                strokeWeight: 5,
+                strokeStyle: 'dashed'
+            });
+            routeLine.setMap(map);
+            map.setFitView([routeLine]);
+        }
+        
+        async function startFlight() {
+            if (isFlying) {
+                alert('无人机已在飞行中');
+                return;
+            }
+            
+            const hasRoute = await fetchRoute();
+            if (!hasRoute || waypoints.length === 0) return;
+            
+            currentWaypointIndex = 0;
+            currentDrone.status = '飞行中';
+            currentDrone.battery = 100;
+            currentDrone.location = [waypoints[0].x, waypoints[0].y];
+            isFlying = true;
+            
+            updateDroneDisplay();
+            document.getElementById('progressInfo').style.display = 'block';
+            document.getElementById('startBtn').disabled = true;
+            
+            startAnimation();
+        }
+        
+        function startAnimation() {
+            if (!isFlying) return;
+            if (currentWaypointIndex >= waypoints.length - 1) {
+                finishFlight();
+                return;
+            }
+            
+            const start = waypoints[currentWaypointIndex];
+            const end = waypoints[currentWaypointIndex + 1];
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            const steps = Math.max(20, Math.floor(distance / 5));
+            let step = 0;
+            
+            document.getElementById('progressDetail').innerHTML = `正在从 ${start.name} 飞往 ${end.name}...`;
+            
+            const interval = setInterval(() => {
+                if (!isFlying) {
+                    clearInterval(interval);
+                    return;
+                }
+                step++;
+                const progress = step / steps;
+                if (progress >= 1) {
+                    clearInterval(interval);
+                    currentWaypointIndex++;
+                    currentDrone.location = [end.x, end.y];
+                    const batteryCost = distance / 10;
+                    currentDrone.battery = Math.max(0, currentDrone.battery - batteryCost);
+                    updateDroneDisplay();
+                    startAnimation();
+                } else {
+                    const newX = start.x + dx * progress;
+                    const newY = start.y + dy * progress;
+                    currentDrone.location = [newX, newY];
+                    updateDroneDisplay();
+                }
+            }, 100);
+        }
+        
+        function finishFlight() {
+            isFlying = false;
+            currentDrone.status = '空闲';
+            updateDroneDisplay();
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('progressDetail').innerHTML = '✅ 配送完成！已返回起点';
+            setTimeout(() => { document.getElementById('progressDetail').innerHTML = ''; }, 3000);
+        }
+        
+        function stopFlight() {
+            isFlying = false;
+            currentDrone.status = '空闲';
+            updateDroneDisplay();
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('progressDetail').innerHTML = '⏹️ 飞行已停止';
+        }
+        
+        window.onload = async function() {
+            try {
+                await initMap();
+                await loadServiceArea();
+                updateAreaButtons();
+                document.getElementById('drawBtn').onclick = startDrawingArea;
+                document.getElementById('saveAreaBtn').onclick = saveServiceArea;
+                document.getElementById('undoPointBtn').onclick = undoLastPoint;
+                document.getElementById('cancelDrawBtn').onclick = cancelDrawingArea;
+                document.getElementById('clearAreaBtn').onclick = clearServiceArea;
+                document.getElementById('startBtn').onclick = startFlight;
+                document.getElementById('stopBtn').onclick = stopFlight;
+            } catch (error) {
+                console.error('高德地图初始化失败:', error);
+                document.getElementById('areaStatus').innerHTML = `高德地图初始化失败：${error.message}<br>请先确认网络可访问高德 JS SDK；如果你要保存配送范围，再启动后端 Flask。`;
+            }
+        };
+    </script>
+</body>
+</html>

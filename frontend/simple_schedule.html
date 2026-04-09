@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>订单列表 - 无人机配送</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .order-card { border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .high { border-left: 4px solid red; }
+        .medium { border-left: 4px solid orange; }
+        .low { border-left: 4px solid green; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        pre { background: #f4f4f4; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🚁 无人机医药配送系统 - 订单管理</h1>
+    
+    <div>
+        <button onclick="refreshOrders()">🔄 刷新订单</button>
+        <button onclick="testAddOrder()">➕ 测试添加订单</button>
+        <button onclick="callPlanRoute()">✈️ 调用路线规划</button>
+        <button onclick="clearOrders()">🗑️ 清空所有订单</button>
+    </div>
+    
+    <h2>📋 当前订单列表</h2>
+    <div id="ordersContainer">加载中...</div>
+    
+    <h2>🔧 调试信息</h2>
+    <pre id="debugInfo">等待操作...</pre>
+
+    <script>
+        const API_URL = window.location.protocol === 'file:'
+            ? 'http://127.0.0.1:5000'
+            : window.location.origin;
+        
+        async function refreshOrders() {
+            try {
+                const response = await fetch(`${API_URL}/api/orders`);
+                const data = await response.json();
+                
+                const container = document.getElementById('ordersContainer');
+                const debug = document.getElementById('debugInfo');
+                
+                debug.innerHTML = `请求时间: ${new Date().toLocaleTimeString()}\n响应状态: ${response.status}\n返回数据: ${JSON.stringify(data, null, 2)}`;
+                
+                if (data.success && data.orders.length > 0) {
+                    let html = '';
+                    data.orders.forEach(order => {
+                        html += `
+                            <div class="order-card ${order.priority === '高' ? 'high' : (order.priority === '中' ? 'medium' : 'low')}">
+                                <strong>订单 #${order.id}</strong><br>
+                                📦 药品: ${order.medicine}<br>
+                                📍 地点: ${order.location}<br>
+                                ⚡ 优先级: ${order.priority}<br>
+                                📝 状态: ${order.status}<br>
+                                🕐 时间: ${order.create_time}
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<p>暂无订单，请先添加订单</p>';
+                }
+            } catch (error) {
+                document.getElementById('ordersContainer').innerHTML = `<p style="color:red">连接失败: ${error.message}<br>请确保后端已启动 (python app.py)</p>`;
+                document.getElementById('debugInfo').innerHTML = `错误: ${error.message}`;
+            }
+        }
+        
+        async function testAddOrder() {
+            const orderData = {
+                medicine: '测试药品_' + Math.floor(Math.random() * 100),
+                location: '宿舍A区',
+                priority: ['高', '中', '低'][Math.floor(Math.random() * 3)],
+                notes: '测试订单'
+            };
+            
+            try {
+                const response = await fetch(`${API_URL}/api/orders`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
+                });
+                const data = await response.json();
+                document.getElementById('debugInfo').innerHTML = `添加订单: ${JSON.stringify(data, null, 2)}`;
+                refreshOrders();
+            } catch (error) {
+                document.getElementById('debugInfo').innerHTML = `添加失败: ${error.message}`;
+            }
+        }
+        
+        async function callPlanRoute() {
+            try {
+                const response = await fetch(`${API_URL}/api/plan-route`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                document.getElementById('debugInfo').innerHTML = `路线规划结果: ${JSON.stringify(data, null, 2)}`;
+                if (data.success) {
+                    alert(`规划成功！总距离: ${data.route.route_summary?.total_distance || '?'} 米`);
+                } else {
+                    alert(`规划失败: ${data.message}`);
+                }
+            } catch (error) {
+                document.getElementById('debugInfo').innerHTML = `规划失败: ${error.message}`;
+            }
+        }
+        
+        async function clearOrders() {
+            // 获取所有订单并删除
+            try {
+                const response = await fetch(`${API_URL}/api/orders`);
+                const data = await response.json();
+                if (data.success && data.orders.length > 0) {
+                    for (let order of data.orders) {
+                        await fetch(`${API_URL}/api/orders/${order.id}`, {
+                            method: 'DELETE'
+                        });
+                    }
+                    alert(`已删除 ${data.orders.length} 个订单`);
+                    refreshOrders();
+                } else {
+                    alert('没有订单需要删除');
+                }
+            } catch (error) {
+                alert(`删除失败: ${error.message}`);
+            }
+        }
+        
+        // 页面加载时自动刷新
+        refreshOrders();
+        
+        // 每5秒自动刷新
+        setInterval(refreshOrders, 5000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调度演示 - 无人机医药配送</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', sans-serif; background: linear-gradient(180deg, #edf4ff 0%, #f7fbff 45%, #eef6f1 100%); color: #243447; }
+        :root { --nav-bg: #2c3e50; --nav-text: rgba(255, 255, 255, 0.92); --nav-hover: rgba(255, 255, 255, 0.1); --nav-active: #3498db; }
+        .navbar { background-color: var(--nav-bg); color: white; min-height: 74px; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; gap: 2rem; }
+        .logo { font-size: 1.5rem; font-weight: bold; white-space: nowrap; }
+        .nav-links { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+        .nav-links a { color: var(--nav-text); text-decoration: none; min-height: 40px; padding: 0.55rem 1rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; transition: background-color 0.25s, color 0.25s, transform 0.25s; }
+        .nav-links a:hover { background-color: var(--nav-hover); color: white; transform: translateY(-1px); }
+        .nav-links a.active { background-color: var(--nav-active); color: white; box-shadow: 0 8px 20px rgba(52, 152, 219, 0.28); }
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { background: white; padding: 1.5rem; border-radius: 10px; text-align: center; }
+        .stat-card .number { font-size: 2rem; font-weight: bold; }
+        /* [本次修改-前端自然语言] 改成两行布局，给自然语言输入和 AI 解释留出位置。 */
+        .schedule-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 2rem; align-items: start; }
+        .control-panel { background: white; padding: 1.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(44, 62, 80, 0.08); margin-bottom: 2rem; }
+        .queue-section, .result-section { background: white; padding: 1.5rem; border-radius: 10px; }
+        .section-title { border-bottom: 2px solid #3498db; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+        .order-item { background: #f8f9fa; padding: 1rem; border-radius: 10px; margin-bottom: 0.8rem; border-left: 4px solid; display: flex; justify-content: space-between; gap: 1rem; }
+        .order-item.high { border-left-color: #e74c3c; }
+        .order-item.medium { border-left-color: #f39c12; }
+        .order-item.low { border-left-color: #27ae60; }
+        .priority-badge { padding: 0.3rem 0.8rem; border-radius: 20px; color: white; font-size: 0.8rem; }
+        .priority-badge.high { background-color: #e74c3c; }
+        .priority-badge.medium { background-color: #f39c12; }
+        .priority-badge.low { background-color: #27ae60; }
+        .result-table { width: 100%; border-collapse: collapse; }
+        .result-table th, .result-table td { padding: 0.8rem; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+        .btn { background: #3498db; color: white; padding: 0.8rem 1.5rem; border: none; border-radius: 10px; cursor: pointer; margin-right: 1rem; }
+        .btn.secondary { background: #7f8c8d; }
+        /* [本次修改-前端自然语言] 为输入框和 AI 结果增加更清晰的可视化。 */
+        .nl-label { font-weight: bold; color: #2c3e50; margin-bottom: 0.5rem; display: block; }
+        .nl-input { width: 100%; min-height: 120px; border: 1px solid #d5deea; border-radius: 12px; padding: 1rem; resize: vertical; font-size: 1rem; line-height: 1.6; }
+        .hint-text { margin-top: 0.6rem; color: #5d6d7e; font-size: 0.92rem; }
+        .action-row { margin-top: 1rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+        .analysis-card { margin-top: 1rem; background: #f3f8ff; border: 1px solid #dbe9ff; border-radius: 12px; padding: 1rem; }
+        .summary-card { margin-bottom: 1rem; background: #f7fbff; border: 1px solid #d6e9fb; border-radius: 12px; padding: 1rem; }
+        .summary-card p { margin-bottom: 0.4rem; }
+        .muted { color: #6c7a89; }
+        .status-text { margin-top: 0.8rem; min-height: 24px; color: #2c3e50; }
+        .footer { background: #2c3e50; color: white; text-align: center; padding: 2rem; margin-top: 3rem; }
+        @media (max-width: 900px) {
+            .navbar { padding: 1rem; align-items: flex-start; flex-direction: column; }
+            .nav-links { width: 100%; gap: 0.5rem; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .schedule-grid { grid-template-columns: 1fr; }
+            .action-row { flex-direction: column; }
+            .btn { width: 100%; margin-right: 0; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🍃 无人机医药配送</div>
+        <div class="nav-links">
+            <a href="index.html">首页</a>
+            <a href="order.html">发起配送</a>
+            <a href="schedule.html" class="active">调度演示</a>
+            <a href="monitor.html">实时监控</a>
+            <a href="history.html">历史记录</a>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card"><h3>等待配送</h3><div class="number" id="waitingCount">0</div></div>
+            <div class="stat-card"><h3>可用无人机</h3><div class="number">3</div></div>
+            <div class="stat-card"><h3>已完成</h3><div class="number" id="completedCount">0</div></div>
+        </div>
+
+        <!-- [本次修改-前端自然语言] 新增自然语言调度输入面板，让用户可以直接输入 AI 规划要求。 -->
+        <div class="control-panel">
+            <label class="nl-label" for="naturalLanguageInput">自然语言调度要求</label>
+            <textarea
+                id="naturalLanguageInput"
+                class="nl-input"
+                placeholder="例如：请优先配送教学楼和图书馆，其他任务按距离最短规划；高优先级订单必须先处理。"
+            ></textarea>
+            <div class="hint-text">不填写也可以，系统会默认按“高优先级优先 + 总距离尽量短”来规划。</div>
+            <div class="action-row">
+                <button class="btn" onclick="fetchOrders()">刷新订单</button>
+                <button class="btn" onclick="runSchedule()">运行 AI 调度</button>
+                <button class="btn secondary" onclick="fillExample()">填入示例要求</button>
+            </div>
+            <div id="statusText" class="status-text"></div>
+        </div>
+
+        <div class="schedule-grid">
+            <div class="queue-section">
+                <h3 class="section-title">⏳ 等待配送订单</h3>
+                <div id="waitingQueue">加载中...</div>
+            </div>
+            <div class="result-section">
+                <h3 class="section-title">✅ AI 调度结果</h3>
+                <!-- [本次修改-前端自然语言] 新增摘要与自然语言理解展示区。 -->
+                <div id="summaryCard" class="summary-card">
+                    <p class="muted">点击“运行 AI 调度”后，这里会显示豆包或本地兜底规划结果。</p>
+                </div>
+                <div id="analysisCard" class="analysis-card" style="display:none;"></div>
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th>顺序</th>
+                            <th>药品</th>
+                            <th>地点</th>
+                            <th>优先级</th>
+                            <th>原因</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultBody"><tr><td colspan="5">点击运行 AI 调度</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <footer class="footer"><p>© 2025 校园无人机医药配送系统</p></footer>
+    <script>
+        const API = window.location.protocol === 'file:'
+            ? 'http://127.0.0.1:5000'
+            : window.location.origin;
+        let orders = [];
+        let latestRoute = null;
+
+        async function fetchOrders() {
+            try {
+                const res = await fetch(API + '/api/orders');
+                const data = await res.json();
+                if (data.success) {
+                    orders = data.orders.filter(o => o.status === '等待中');
+                    displayOrders();
+                    updateStats(data.orders);
+                    setStatus(`已加载 ${orders.length} 个待配送订单。`);
+                } else {
+                    document.getElementById('waitingQueue').innerHTML = '获取失败';
+                    setStatus('获取订单失败。');
+                }
+            } catch (e) {
+                document.getElementById('waitingQueue').innerHTML = '连接失败，请启动后端';
+                setStatus('无法连接后端，请先启动 Flask 服务。');
+            }
+        }
+
+        function displayOrders() {
+            const div = document.getElementById('waitingQueue');
+            if (orders.length === 0) {
+                div.innerHTML = '暂无订单';
+                return;
+            }
+
+            div.innerHTML = '';
+            orders.forEach(o => {
+                const cls = getPriorityClass(o.priority);
+                div.innerHTML += `
+                    <div class="order-item ${cls}">
+                        <div>
+                            <strong>#${o.id} ${o.medicine}</strong><br>
+                            ${o.location}<br>
+                            <span class="muted">${o.notes || '无备注'}</span>
+                        </div>
+                        <span class="priority-badge ${cls}">${o.priority}</span>
+                    </div>
+                `;
+            });
+        }
+
+        /* [本次修改-前端自然语言] 等待数和完成数改为从完整订单集合中计算。 */
+        function updateStats(allOrders = orders) {
+            document.getElementById('waitingCount').innerText = allOrders.filter(o => o.status === '等待中').length;
+            document.getElementById('completedCount').innerText = allOrders.filter(o => o.status === '已完成').length;
+        }
+
+        function getPriorityClass(priority) {
+            return priority === '高' ? 'high' : (priority === '中' ? 'medium' : 'low');
+        }
+
+        function setStatus(message) {
+            document.getElementById('statusText').innerText = message;
+        }
+
+        function fillExample() {
+            document.getElementById('naturalLanguageInput').value = '请优先配送教学楼和图书馆，剩余订单按总距离最短规划；高优先级订单必须先处理。';
+            setStatus('已填入示例要求，可以直接运行 AI 调度。');
+        }
+
+        async function runSchedule() {
+            const tbody = document.getElementById('resultBody');
+            const summaryCard = document.getElementById('summaryCard');
+            const analysisCard = document.getElementById('analysisCard');
+
+            if (orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">无订单</td></tr>';
+                summaryCard.innerHTML = '<p class="muted">当前没有待配送订单，无法规划路线。</p>';
+                analysisCard.style.display = 'none';
+                return;
+            }
+
+            const naturalLanguageInput = document.getElementById('naturalLanguageInput').value.trim();
+            setStatus('正在请求后端规划路线...');
+            tbody.innerHTML = '<tr><td colspan="5">AI 正在规划，请稍候...</td></tr>';
+
+            try {
+                const res = await fetch(`${API}/api/plan-route`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        natural_language_input: naturalLanguageInput
+                    })
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    tbody.innerHTML = `<tr><td colspan="5">${data.message || '规划失败'}</td></tr>`;
+                    summaryCard.innerHTML = `<p>规划失败：${data.message || '未知错误'}</p>`;
+                    analysisCard.style.display = 'none';
+                    setStatus('规划失败，请检查后端日志。');
+                    return;
+                }
+
+                latestRoute = data.route;
+                renderRouteResult(data.route, naturalLanguageInput);
+                setStatus(`规划完成，当前使用 ${data.route.planning_basis === 'doubao' ? '豆包 AI' : '本地兜底'} 方案。`);
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="5">请求失败：${error.message}</td></tr>`;
+                summaryCard.innerHTML = `<p>请求失败：${error.message}</p>`;
+                analysisCard.style.display = 'none';
+                setStatus('请求失败，请确保后端已启动。');
+            }
+        }
+
+        /* [本次修改-前端自然语言] 统一渲染路线摘要、自然语言理解和任务顺序。 */
+        function renderRouteResult(route, naturalLanguageInput) {
+            const tbody = document.getElementById('resultBody');
+            const summaryCard = document.getElementById('summaryCard');
+            const analysisCard = document.getElementById('analysisCard');
+            const routeSummary = route.route_summary || {};
+            const routeTasks = route.tasks_order || [];
+            const nl = route.natural_language_understanding || {};
+
+            summaryCard.innerHTML = `
+                <p><strong>规划来源：</strong>${route.planning_basis === 'doubao' ? '豆包 AI' : '本地兜底规划'}</p>
+                <p><strong>总距离：</strong>${routeSummary.total_distance ?? '?'} 米</p>
+                <p><strong>预计飞行时间：</strong>${routeSummary.total_time ?? '?'} 秒</p>
+                <p><strong>航点路径：</strong>${(route.waypoints || []).map(item => item.name).join(' → ') || '暂无'}</p>
+                <p><strong>备注：</strong>${route.note || '无'}</p>
+            `;
+
+            analysisCard.style.display = 'block';
+            analysisCard.innerHTML = `
+                <p><strong>原始输入：</strong>${nl.raw_instruction || naturalLanguageInput || '未填写，使用默认策略'}</p>
+                <p><strong>识别地点：</strong>${(nl.recognized_locations || []).join('、') || '未识别到明确地点'}</p>
+                <p><strong>优先策略：</strong>${nl.priority_policy || '按默认优先级策略处理'}</p>
+                <p><strong>补充要求：</strong>${(nl.special_requirements || []).join('；') || '无'}</p>
+            `;
+
+            if (routeTasks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">暂无任务顺序数据</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '';
+            routeTasks.forEach((task, index) => {
+                const cls = getPriorityClass(task.priority);
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${task.order || index + 1}</td>
+                        <td>${task.medicine || '未返回药品名'}</td>
+                        <td>${task.location}</td>
+                        <td><span class="priority-badge ${cls}">${task.priority || '-'}</span></td>
+                        <td>${task.reason || '无解释'}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        fetchOrders();
+    </script>
+</body>
+</html>
