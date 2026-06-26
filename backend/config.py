@@ -38,7 +38,3 @@ class Config:
     AMAP_DEFAULT_CITY = os.getenv("AMAP_DEFAULT_CITY", "").strip()
     AMAP_BASE_URL = "https://restapi.amap.com/v3"
     AMAP_TIMEOUT = 5
-
-    # 无人机参数
-    DRONE_SPEED = 10  # 米/秒
-    DRONE_CAPACITY = 5  # 一次最多带5个药

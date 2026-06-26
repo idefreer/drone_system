@@ -15,7 +15,7 @@
         .nav-links a:hover { background-color: var(--nav-hover); color: white; transform: translateY(-1px); }
         .nav-links a.active { background-color: var(--nav-active); color: white; box-shadow: 0 8px 20px rgba(52, 152, 219, 0.28); }
         .container { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
-        .stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 1.5rem; margin-bottom: 2rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 1.5rem; margin-bottom: 2rem; }
         .stat-card { background: white; padding: 1.5rem; border-radius: 10px; text-align: center; }
         .stat-card .number { font-size: 2rem; font-weight: bold; }
         /* [本次修改-前端自然语言] 改成两行布局，给自然语言输入和 AI 解释留出位置。 */
@@ -70,7 +70,6 @@
     <div class="container">
         <div class="stats-grid">
             <div class="stat-card"><h3>等待配送</h3><div class="number" id="waitingCount">0</div></div>
-            <div class="stat-card"><h3>可用无人机</h3><div class="number">3</div></div>
             <div class="stat-card"><h3>已完成</h3><div class="number" id="completedCount">0</div></div>
         </div>
 
@@ -244,7 +243,6 @@
             summaryCard.innerHTML = `
                 <p><strong>规划来源：</strong>${route.planning_basis === 'doubao' ? '豆包 AI' : '本地兜底规划'}</p>
                 <p><strong>总距离：</strong>${routeSummary.total_distance ?? '?'} 米</p>
-                <p><strong>预计飞行时间：</strong>${routeSummary.total_time ?? '?'} 秒</p>
                 <p><strong>航点路径：</strong>${(route.waypoints || []).map(item => item.name).join(' → ') || '暂无'}</p>
                 <p><strong>备注：</strong>${route.note || '无'}</p>
             `;

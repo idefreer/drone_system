@@ -18,6 +18,7 @@ class LLMService:
     def __init__(self):
         self.api_url = Config.DOUBAO_API_URL
         self.api_key = Config.DOUBAO_API_KEY
+
         self.model = Config.DOUBAO_MODEL
         self.endpoint_id = Config.DOUBAO_ENDPOINT_ID
         # [本次修改-终端兼容] 避免 Windows GBK 终端因 emoji 输出报错。
@@ -69,11 +70,6 @@ class LLMService:
         natural_language_text = natural_language_input.strip() or "默认策略：高优先级优先，其次总距离最短。"
         prompt_payload = {
             "instruction": natural_language_text,
-            "drone": {
-                "start": self._get_depot_name(map_points),
-                "end": self._get_depot_name(map_points),
-                "speed": Config.DRONE_SPEED,
-            },
             "points": self._build_prompt_points(tasks, map_points),
             "tasks": self._build_prompt_tasks(tasks),
         }
@@ -224,7 +220,6 @@ class LLMService:
         total_distance = sum(segment["distance"] for segment in normalized_route["flight_path"])
         normalized_route["route_summary"] = {
             "total_distance": total_distance,
-            "total_time": self._distance_to_time(total_distance),
             "start_point": depot_name,
             "end_point": depot_name,
         }
@@ -294,7 +289,6 @@ class LLMService:
                 },
                 "route_summary": {
                     "total_distance": 0,
-                    "total_time": 0,
                     "start_point": depot_name,
                     "end_point": depot_name,
                 },
@@ -351,7 +345,6 @@ class LLMService:
             "natural_language_understanding": analysis,
             "route_summary": {
                 "total_distance": total_distance,
-                "total_time": self._distance_to_time(total_distance),
                 "start_point": depot_name,
                 "end_point": depot_name,
             },
@@ -442,7 +435,6 @@ class LLMService:
                     "from": start["name"],
                     "to": end["name"],
                     "distance": distance,
-                    "time": self._distance_to_time(distance),
                 }
             )
         return flight_path
@@ -467,10 +459,6 @@ class LLMService:
         dx = start_point["x"] - end_point["x"]
         dy = start_point["y"] - end_point["y"]
         return int(round(math.sqrt(dx * dx + dy * dy)))
-
-    def _distance_to_time(self, distance):
-        speed = max(Config.DRONE_SPEED, 1)
-        return int(round(distance / speed))
 
     def _get_depot_name(self, map_points):
         for point in map_points or []:
