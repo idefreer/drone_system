@@ -45,6 +45,13 @@
         .button-row.triple { grid-template-columns: repeat(3, 1fr); }
         .button-row.single { grid-template-columns: 1fr; }
         .status-box { margin-top: 0.8rem; padding: 0.9rem; border-radius: 6px; background: #eef6ff; border: 1px solid #d5e6ff; color: #214c7a; line-height: 1.6; font-size: 0.95rem; }
+        .campus-list { margin-top: 0.8rem; display: grid; gap: 0.8rem; }
+        .campus-list h5 { color: #2c3e50; font-size: 0.95rem; margin-bottom: 0.45rem; }
+        .campus-list-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.45rem; padding: 0.55rem 0; border-bottom: 1px solid #e4ebf3; color: #2c3e50; font-size: 0.9rem; }
+        .campus-list-row:last-child { border-bottom: 0; }
+        .campus-list-empty { color: #7f8c8d; font-size: 0.9rem; }
+        .mini-btn { border: 0; border-radius: 4px; padding: 0.35rem 0.55rem; background: #e8f4fd; color: #21618c; cursor: pointer; }
+        .mini-btn.danger { background: #fdecea; color: #922b21; }
         .footer { background-color: #2c3e50; color: white; text-align: center; padding: 2rem; margin-top: 3rem; }
         @media (max-width: 980px) {
             .navbar { padding: 1rem; align-items: flex-start; flex-direction: column; }
@@ -113,6 +120,7 @@
                         <button id="saveCampusMapBtn" class="btn">保存校园地图</button>
                     </div>
                     <div id="campusMapStatus" class="status-box">尚未加载校园地图标定数据。</div>
+                    <div id="campusMapList" class="campus-list"></div>
                 </div>
 
                 <!-- 豆包决策面板 -->
@@ -551,6 +559,120 @@
             });
 
             setCampusMapStatus(`已加载 ${campusMap.points.length} 个配送点、${campusMap.buildings.length} 个建筑物、${campusMap.connections.length} 条飞行连线。`);
+            renderCampusMapList();
+        }
+
+        function renderCampusMapList() {
+            const container = document.getElementById('campusMapList');
+            if (!container) {
+                return;
+            }
+
+            const pointRows = campusMap.points.length
+                ? campusMap.points.map((point, index) => `
+                    <div class="campus-list-row">
+                        <span>${index + 1}. ${point.name}（${point.type === 'depot' ? '起飞点' : '配送点'}）</span>
+                        <button class="mini-btn" type="button" onclick="editCampusPoint(${index})">编辑</button>
+                        <button class="mini-btn danger" type="button" onclick="deleteCampusPoint(${index})">删除</button>
+                    </div>
+                `).join('')
+                : '<div class="campus-list-empty">暂无配送点</div>';
+
+            const buildingRows = campusMap.buildings.length
+                ? campusMap.buildings.map((building, index) => `
+                    <div class="campus-list-row">
+                        <span>${index + 1}. ${building.name}（${building.height}m）</span>
+                        <button class="mini-btn" type="button" onclick="editCampusBuilding(${index})">编辑</button>
+                        <button class="mini-btn danger" type="button" onclick="deleteCampusBuilding(${index})">删除</button>
+                    </div>
+                `).join('')
+                : '<div class="campus-list-empty">暂无建筑物</div>';
+
+            container.innerHTML = `
+                <div>
+                    <h5>已标定配送点</h5>
+                    ${pointRows}
+                </div>
+                <div>
+                    <h5>已圈画建筑物</h5>
+                    ${buildingRows}
+                </div>
+            `;
+        }
+
+        function editCampusPoint(index) {
+            const point = campusMap.points[index];
+            if (!point) {
+                return;
+            }
+
+            const name = prompt('修改配送点名称', point.name);
+            if (!name) {
+                return;
+            }
+            const typeInput = prompt('修改类型：depot 表示起飞点，delivery 表示配送点', point.type || 'delivery') || point.type || 'delivery';
+            const latText = prompt('修改纬度 lat', point.lat);
+            const lngText = prompt('修改经度 lng', point.lng);
+            const lat = Number(latText);
+            const lng = Number(lngText);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                alert('经纬度必须是数字。');
+                return;
+            }
+
+            const [x, y] = toXY(lat, lng);
+            point.name = name.trim();
+            point.type = typeInput.trim() === 'depot' ? 'depot' : 'delivery';
+            point.lat = Number(lat.toFixed(6));
+            point.lng = Number(lng.toFixed(6));
+            point.x = Number(x.toFixed(2));
+            point.y = Number(y.toFixed(2));
+            renderCampusMap();
+        }
+
+        function deleteCampusPoint(index) {
+            const point = campusMap.points[index];
+            if (!point || !confirm(`确定删除配送点“${point.name}”吗？相关飞行连线也会删除。`)) {
+                return;
+            }
+
+            campusMap.connections = campusMap.connections.filter(connection => (
+                connection.from !== point.name && connection.to !== point.name
+            ));
+            campusMap.points.splice(index, 1);
+            renderCampusMap();
+        }
+
+        function editCampusBuilding(index) {
+            const building = campusMap.buildings[index];
+            if (!building) {
+                return;
+            }
+
+            const name = prompt('修改建筑物名称', building.name);
+            if (!name) {
+                return;
+            }
+            const heightText = prompt('修改建筑物高度（米）', building.height);
+            const height = Number(heightText);
+            if (!Number.isFinite(height) || height <= 0) {
+                alert('建筑物高度必须是大于 0 的数字。');
+                return;
+            }
+
+            building.name = name.trim();
+            building.height = height;
+            renderCampusMap();
+        }
+
+        function deleteCampusBuilding(index) {
+            const building = campusMap.buildings[index];
+            if (!building || !confirm(`确定删除建筑物“${building.name}”吗？`)) {
+                return;
+            }
+
+            campusMap.buildings.splice(index, 1);
+            renderCampusMap();
         }
 
         async function loadCampusMap() {
@@ -790,6 +912,7 @@
                 }
                 campusMap = normalizeCampusMap(result.campus_map);
                 renderCampusMap();
+                fitMapToSavedArea();
                 alert('校园地图已保存。');
             } catch (error) {
                 console.error('保存校园地图失败:', error);
@@ -998,6 +1121,35 @@
             serviceAreaPolygon.setMap(map);
         }
 
+        function getServiceAreaFitOverlay() {
+            return serviceAreaPolygon || null;
+        }
+
+        function getCampusFitOverlays() {
+            return [
+                ...campusBuildingPolygons,
+                ...campusConnectionLines,
+                ...campusPointMarkers
+            ].filter(Boolean);
+        }
+
+        function fitMapToSavedArea() {
+            if (!map) {
+                return;
+            }
+
+            const serviceAreaOverlay = getServiceAreaFitOverlay();
+            if (serviceAreaOverlay) {
+                map.setFitView([serviceAreaOverlay], false, [60, 60, 60, 60], 17);
+                return;
+            }
+
+            const campusOverlays = getCampusFitOverlays();
+            if (campusOverlays.length > 0) {
+                map.setFitView(campusOverlays, false, [60, 60, 60, 60], 17);
+            }
+        }
+
         function applyServiceAreaMeta(meta) {
             const areaStatus = document.getElementById('areaStatus');
             const allowedLocations = new Set(meta.allowed_locations || []);
@@ -1070,6 +1222,7 @@
                 clearDraftArea();
                 updateAreaButtons();
                 applyServiceAreaMeta(result);
+                fitMapToSavedArea();
             } catch (error) {
                 console.error('保存配送范围失败:', error);
                 alert(`保存配送范围失败：${error.message}。${BACKEND_CONNECTION_HINT}`);
@@ -1090,6 +1243,7 @@
                 clearDraftArea();
                 updateAreaButtons();
                 applyServiceAreaMeta(result);
+                fitMapToSavedArea();
             } catch (error) {
                 console.error('清空配送范围失败:', error);
                 alert(`清空配送范围失败：${error.message}。${BACKEND_CONNECTION_HINT}`);
@@ -1264,6 +1418,7 @@
                 await initMap();
                 await loadServiceArea();
                 await loadCampusMap();
+                fitMapToSavedArea();
                 updateAreaButtons();
                 updateCampusButtons();
                 document.getElementById('drawBtn').onclick = startDrawingArea;
