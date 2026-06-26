@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime
 
+import env_loader  # noqa: F401
 from config import Config
 
 
@@ -106,6 +107,30 @@ class MapService:
     def get_points(self):
         """返回所有点位。"""
         return self.points
+
+    def get_campus_map(self):
+        """返回完整校园地图配置。"""
+        if not isinstance(self.map_data, dict):
+            self.map_data = self._empty_campus_map()
+
+        self.map_data.setdefault("name", "校园配送地图")
+        self.map_data.setdefault("description", "校园配送点位、建筑物与飞行连线配置")
+        self.map_data.setdefault("points", [])
+        self.map_data.setdefault("connections", [])
+        self.map_data.setdefault("buildings", [])
+        return self.map_data
+
+    def save_campus_map(self, data):
+        """保存完整校园地图配置，点位和建筑物以高德经纬度为准。"""
+        payload = self._normalize_campus_map(data)
+        payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with open(self.map_file, "w", encoding="utf-8") as file:
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+
+        self.map_data = payload
+        self.points = payload["points"]
+        return payload
 
     def get_available_points(self):
         """返回当前配送范围内允许参与调度的点位。"""
@@ -252,6 +277,105 @@ class MapService:
                 raise ValueError("配送范围顶点必须包含 x 和 y")
             float(point["x"])
             float(point["y"])
+
+    def _empty_campus_map(self):
+        return {
+            "name": "校园配送地图",
+            "description": "校园配送点位、建筑物与飞行连线配置",
+            "points": [],
+            "connections": [],
+            "buildings": [],
+        }
+
+    def _normalize_campus_map(self, data):
+        if not isinstance(data, dict):
+            raise ValueError("校园地图数据必须是对象")
+        if not isinstance(data.get("points", []), list):
+            raise ValueError("points 必须是列表")
+        if not isinstance(data.get("connections", []), list):
+            raise ValueError("connections 必须是列表")
+        if not isinstance(data.get("buildings", []), list):
+            raise ValueError("buildings 必须是列表")
+
+        return {
+            "name": data.get("name") or "校园配送地图",
+            "description": data.get("description") or "校园配送点位、建筑物与飞行连线配置",
+            "points": [self._normalize_campus_point(point) for point in data.get("points", [])],
+            "connections": [self._normalize_connection(item) for item in data.get("connections", [])],
+            "buildings": [self._normalize_building(item) for item in data.get("buildings", [])],
+        }
+
+    def _normalize_campus_point(self, point):
+        if not isinstance(point, dict):
+            raise ValueError("配送点必须是对象")
+
+        name = str(point.get("name", "")).strip()
+        if not name:
+            raise ValueError("配送点必须包含 name")
+
+        normalized = {
+            "id": str(point.get("id") or name),
+            "name": name,
+            "type": str(point.get("type") or "delivery"),
+            "lat": float(point["lat"]),
+            "lng": float(point["lng"]),
+        }
+        normalized["x"] = float(point.get("x", self._lng_to_x(normalized["lng"])))
+        normalized["y"] = float(point.get("y", self._lat_to_y(normalized["lat"])))
+
+        if "altitude" in point and point["altitude"] not in (None, ""):
+            normalized["altitude"] = float(point["altitude"])
+
+        return normalized
+
+    def _normalize_connection(self, connection):
+        if not isinstance(connection, dict):
+            raise ValueError("飞行连线必须是对象")
+
+        normalized = {
+            "from": str(connection.get("from", "")).strip(),
+            "to": str(connection.get("to", "")).strip(),
+        }
+        if not normalized["from"] or not normalized["to"]:
+            raise ValueError("飞行连线必须包含 from 和 to")
+
+        if "flight_altitude" in connection and connection["flight_altitude"] not in (None, ""):
+            normalized["flight_altitude"] = float(connection["flight_altitude"])
+
+        return normalized
+
+    def _normalize_building(self, building):
+        if not isinstance(building, dict):
+            raise ValueError("建筑物必须是对象")
+
+        name = str(building.get("name", "")).strip()
+        if not name:
+            raise ValueError("建筑物必须包含 name")
+
+        polygon = building.get("polygon")
+        if not isinstance(polygon, list) or len(polygon) < 3:
+            raise ValueError("建筑物轮廓至少需要 3 个顶点")
+
+        return {
+            "id": str(building.get("id") or name),
+            "name": name,
+            "height": float(building["height"]),
+            "polygon": [self._normalize_lnglat_vertex(point) for point in polygon],
+        }
+
+    def _normalize_lnglat_vertex(self, point):
+        if not isinstance(point, dict):
+            raise ValueError("经纬度顶点必须是对象")
+        return {
+            "lat": float(point["lat"]),
+            "lng": float(point["lng"]),
+        }
+
+    def _lng_to_x(self, lng):
+        return ((float(lng) - 116.35) / 0.1) * 1000
+
+    def _lat_to_y(self, lat):
+        return ((float(lat) - 39.88) / 0.05) * 1000
 
     def _create_demo_map(self):
         """创建演示地图。真实地图不可用时，程序仍然可以继续运行。"""

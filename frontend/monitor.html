@@ -97,6 +97,24 @@
                     <div id="areaStatus" class="status-box">当前未启用配送范围，系统默认所有配送点都可用。</div>
                 </div>
 
+                <div class="sub-panel">
+                    <h4>校园地图标定</h4>
+                    <p>直接在高德地图上添加配送点，或圈画建筑物轮廓并填写高度；保存后写入校园地图配置。</p>
+                    <div class="button-row">
+                        <button id="addCampusPointBtn" class="btn btn-secondary">添加配送点</button>
+                        <button id="drawBuildingBtn" class="btn btn-secondary">圈画建筑物</button>
+                    </div>
+                    <div class="button-row triple">
+                        <button id="undoBuildingPointBtn" class="btn btn-muted" disabled>撤销建筑顶点</button>
+                        <button id="cancelCampusEditBtn" class="btn btn-muted" disabled>取消标定</button>
+                        <button id="addConnectionBtn" class="btn btn-secondary">添加飞行连线</button>
+                    </div>
+                    <div class="button-row single">
+                        <button id="saveCampusMapBtn" class="btn">保存校园地图</button>
+                    </div>
+                    <div id="campusMapStatus" class="status-box">尚未加载校园地图标定数据。</div>
+                </div>
+
                 <!-- 豆包决策面板 -->
                 <div id="decisionPanel" class="decision-panel" style="display:none;">
                     <strong>🤖 豆包大模型决策</strong>
@@ -143,11 +161,22 @@
         let draftPolygon;
         let draftMarkers = [];
         let locationMarkers = {};
+        let campusMap = { name: '校园配送地图', description: '校园配送点位、建筑物与飞行连线配置', points: [], connections: [], buildings: [] };
+        let campusPointMarkers = [];
+        let campusBuildingPolygons = [];
+        let campusBuildingLabels = [];
+        let campusConnectionLines = [];
+        let campusEditMode = null;
+        let buildingDraftLngLats = [];
+        let buildingDraftLine;
+        let buildingDraftPolygon;
+        let buildingDraftMarkers = [];
         let isDrawingArea = false;
         let drawingLngLats = [];
         let isFlying = false;
         let currentWaypointIndex = 0;
         let waypoints = [];
+        let lastHandledMapClick = null;
         
         const pointsMap = {};
         
@@ -304,15 +333,29 @@
                 const marker = new AMap.Marker({
                     position: toLngLat(pos[0], pos[1]),
                     title: name,
-                    content: createLocationMarkerContent(true)
+                    content: createLocationMarkerContent(true),
+                    bubble: true
                 });
                 marker.setMap(map);
                 marker.setExtData({ name, status: '可配送' });
-                marker.on('click', () => openMarkerInfo(marker));
+                marker.on('click', event => {
+                    if (campusEditMode || isDrawingArea) {
+                        handleMapClick(event);
+                        return;
+                    }
+                    openMarkerInfo(marker);
+                });
                 locationMarkers[name] = marker;
             }
 
             map.on('click', handleMapClick);
+        }
+
+        function bindOverlayMapClick(overlay) {
+            if (overlay && typeof overlay.on === 'function') {
+                overlay.on('click', handleMapClick);
+            }
+            return overlay;
         }
 
         function openMarkerInfo(marker) {
@@ -339,6 +382,419 @@
                     <div style="width:18px;height:18px;border-radius:50%;background:${fillColor};border:3px solid ${ringColor};box-shadow:0 6px 14px rgba(0,0,0,0.18);"></div>
                 </div>
             `;
+        }
+
+        function toStoredLngLat(lngLat) {
+            const point = toPlainLngLat(lngLat);
+            return {
+                lng: Number(point.lng.toFixed(6)),
+                lat: Number(point.lat.toFixed(6))
+            };
+        }
+
+        function getEventLngLat(event) {
+            if (event?.lnglat) {
+                return event.lnglat;
+            }
+            if (event?.lngLat) {
+                return event.lngLat;
+            }
+            if (event?.target?.getPosition) {
+                return event.target.getPosition();
+            }
+            return null;
+        }
+
+        function shouldSkipDuplicateMapClick(lngLat) {
+            const point = toPlainLngLat(lngLat);
+            const now = Date.now();
+            const modeKey = campusEditMode || (isDrawingArea ? 'service-area' : 'none');
+            if (
+                lastHandledMapClick &&
+                lastHandledMapClick.modeKey === modeKey &&
+                now - lastHandledMapClick.time < 180 &&
+                Math.abs(lastHandledMapClick.lng - point.lng) < 1e-8 &&
+                Math.abs(lastHandledMapClick.lat - point.lat) < 1e-8
+            ) {
+                return true;
+            }
+
+            lastHandledMapClick = {
+                time: now,
+                modeKey,
+                lng: point.lng,
+                lat: point.lat
+            };
+            return false;
+        }
+
+        function createCampusPointContent(type) {
+            const color = type === 'depot' ? '#e74c3c' : '#16a085';
+            return `
+                <div style="transform:translate(-50%,-100%);">
+                    <div style="width:18px;height:18px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 6px 14px rgba(0,0,0,0.2);"></div>
+                </div>
+            `;
+        }
+
+        function normalizeCampusMap(data) {
+            return {
+                name: data?.name || '校园配送地图',
+                description: data?.description || '校园配送点位、建筑物与飞行连线配置',
+                points: Array.isArray(data?.points) ? data.points : [],
+                connections: Array.isArray(data?.connections) ? data.connections : [],
+                buildings: Array.isArray(data?.buildings) ? data.buildings : []
+            };
+        }
+
+        function setCampusMapStatus(message) {
+            document.getElementById('campusMapStatus').innerHTML = message;
+        }
+
+        function updateCampusButtons() {
+            document.getElementById('addCampusPointBtn').disabled = Boolean(campusEditMode);
+            document.getElementById('drawBuildingBtn').disabled = Boolean(campusEditMode && campusEditMode !== 'building');
+            document.getElementById('drawBuildingBtn').textContent = campusEditMode === 'building' ? '保存建筑物' : '圈画建筑物';
+            document.getElementById('undoBuildingPointBtn').disabled = campusEditMode !== 'building' || buildingDraftLngLats.length === 0;
+            document.getElementById('cancelCampusEditBtn').disabled = !campusEditMode;
+            document.getElementById('addConnectionBtn').disabled = Boolean(campusEditMode);
+        }
+
+        function clearCampusOverlays() {
+            campusPointMarkers.forEach(marker => marker.setMap(null));
+            campusBuildingPolygons.forEach(polygon => polygon.setMap(null));
+            campusBuildingLabels.forEach(label => label.setMap(null));
+            campusConnectionLines.forEach(line => line.setMap(null));
+            campusPointMarkers = [];
+            campusBuildingPolygons = [];
+            campusBuildingLabels = [];
+            campusConnectionLines = [];
+        }
+
+        function renderCampusMap() {
+            clearCampusOverlays();
+            const pointLookup = new Map(campusMap.points.map(point => [point.name, point]));
+
+            campusMap.connections.forEach(connection => {
+                const from = pointLookup.get(connection.from);
+                const to = pointLookup.get(connection.to);
+                if (!from || !to || from.lng == null || from.lat == null || to.lng == null || to.lat == null) {
+                    return;
+                }
+                const line = new AMap.Polyline({
+                    path: [[from.lng, from.lat], [to.lng, to.lat]],
+                    strokeColor: '#2ecc71',
+                    strokeWeight: 3,
+                    strokeStyle: 'solid',
+                    bubble: true
+                });
+                bindOverlayMapClick(line);
+                line.setMap(map);
+                campusConnectionLines.push(line);
+            });
+
+            campusMap.points.forEach(point => {
+                if (point.lng == null || point.lat == null) {
+                    return;
+                }
+                const marker = new AMap.Marker({
+                    position: [point.lng, point.lat],
+                    title: point.name,
+                    content: createCampusPointContent(point.type),
+                    bubble: true
+                });
+                marker.setExtData({ name: point.name, status: point.type === 'depot' ? '起飞点' : '配送点' });
+                marker.on('click', event => {
+                    if (campusEditMode) {
+                        handleMapClick(event);
+                        return;
+                    }
+                    openMarkerInfo(marker);
+                });
+                marker.setMap(map);
+                campusPointMarkers.push(marker);
+            });
+
+            campusMap.buildings.forEach(building => {
+                const path = (building.polygon || []).map(point => [point.lng, point.lat]);
+                if (path.length < 3) {
+                    return;
+                }
+                const polygon = new AMap.Polygon({
+                    path,
+                    strokeColor: '#8e44ad',
+                    strokeWeight: 2,
+                    fillColor: '#9b59b6',
+                    fillOpacity: 0.18,
+                    bubble: true
+                });
+                bindOverlayMapClick(polygon);
+                polygon.setMap(map);
+                campusBuildingPolygons.push(polygon);
+
+                const labelPosition = path[0];
+                const label = new AMap.Text({
+                    text: `${building.name} ${building.height}m`,
+                    position: labelPosition,
+                    style: {
+                        'background-color': '#ffffff',
+                        'border': '1px solid #8e44ad',
+                        'color': '#5b2c6f',
+                        'padding': '3px 6px',
+                        'font-size': '12px'
+                    },
+                    bubble: true
+                });
+                bindOverlayMapClick(label);
+                label.setMap(map);
+                campusBuildingLabels.push(label);
+            });
+
+            setCampusMapStatus(`已加载 ${campusMap.points.length} 个配送点、${campusMap.buildings.length} 个建筑物、${campusMap.connections.length} 条飞行连线。`);
+        }
+
+        async function loadCampusMap() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/campus-map`);
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.message || '加载校园地图失败');
+                }
+                campusMap = normalizeCampusMap(result.campus_map);
+                renderCampusMap();
+            } catch (error) {
+                console.error('加载校园地图失败:', error);
+                setCampusMapStatus(`加载校园地图失败：${error.message}<br>${BACKEND_CONNECTION_HINT}`);
+            }
+        }
+
+        function startAddCampusPoint() {
+            campusEditMode = 'point';
+            cancelDrawingArea();
+            updateCampusButtons();
+            setCampusMapStatus('请在地图上点击配送点位置。');
+        }
+
+        function startDrawBuilding() {
+            if (campusEditMode === 'building' && buildingDraftLngLats.length >= 3) {
+                saveBuildingDraft();
+                return;
+            }
+
+            campusEditMode = 'building';
+            cancelDrawingArea();
+            buildingDraftLngLats = [];
+            clearBuildingDraft();
+            updateCampusButtons();
+            setCampusMapStatus('请沿建筑物轮廓依次点击顶点，至少 3 个点后再次点击“保存建筑物”。');
+        }
+
+        function clearBuildingDraft() {
+            if (buildingDraftLine) {
+                buildingDraftLine.setMap(null);
+                buildingDraftLine = null;
+            }
+            if (buildingDraftPolygon) {
+                buildingDraftPolygon.setMap(null);
+                buildingDraftPolygon = null;
+            }
+            buildingDraftMarkers.forEach(marker => marker.setMap(null));
+            buildingDraftMarkers = [];
+        }
+
+        function refreshBuildingDraft() {
+            clearBuildingDraft();
+            buildingDraftMarkers = buildingDraftLngLats.map((lngLat, index) => {
+                const marker = new AMap.Marker({
+                    position: lngLat,
+                    draggable: true,
+                    cursor: 'move',
+                    offset: new AMap.Pixel(-6, -6),
+                    content: '<div style="width:12px;height:12px;border-radius:50%;background:#8e44ad;border:2px solid #5b2c6f;box-shadow:0 0 0 3px rgba(142, 68, 173, 0.16);"></div>'
+                });
+                marker.setExtData({ index });
+                marker.on('dragging', handleBuildingDraftDrag);
+                marker.on('dragend', handleBuildingDraftDrag);
+                marker.setMap(map);
+                return marker;
+            });
+
+            if (buildingDraftLngLats.length >= 3) {
+                buildingDraftPolygon = new AMap.Polygon({
+                    path: buildingDraftLngLats,
+                    strokeColor: '#8e44ad',
+                    strokeWeight: 3,
+                    fillColor: '#9b59b6',
+                    fillOpacity: 0.12,
+                    bubble: true
+                });
+                bindOverlayMapClick(buildingDraftPolygon);
+                buildingDraftPolygon.setMap(map);
+            } else if (buildingDraftLngLats.length >= 2) {
+                buildingDraftLine = new AMap.Polyline({
+                    path: buildingDraftLngLats,
+                    strokeColor: '#8e44ad',
+                    strokeWeight: 4,
+                    strokeStyle: 'dashed',
+                    bubble: true
+                });
+                bindOverlayMapClick(buildingDraftLine);
+                buildingDraftLine.setMap(map);
+            }
+
+            updateCampusButtons();
+            setCampusMapStatus(`正在圈画建筑物：已选择 ${buildingDraftLngLats.length} 个顶点。`);
+        }
+
+        function handleBuildingDraftDrag(event) {
+            const marker = event.target;
+            const index = marker.getExtData()?.index;
+            if (index == null) {
+                return;
+            }
+            buildingDraftLngLats[index] = event.lnglat;
+            refreshBuildingDraft();
+        }
+
+        function handleCampusMapClick(event) {
+            const clickedLngLat = getEventLngLat(event);
+            if (!clickedLngLat) {
+                return;
+            }
+
+            if (campusEditMode === 'point') {
+                const name = prompt('请输入配送点名称，例如：一食堂、A区宿舍、教学楼A');
+                if (!name) {
+                    return;
+                }
+                const typeInput = prompt('请输入类型：depot 表示起飞点，delivery 表示配送点', 'delivery') || 'delivery';
+                const stored = toStoredLngLat(clickedLngLat);
+                const [x, y] = toXY(stored.lat, stored.lng);
+                campusMap.points.push({
+                    id: `point_${Date.now()}`,
+                    name: name.trim(),
+                    type: typeInput.trim() === 'depot' ? 'depot' : 'delivery',
+                    x: Number(x.toFixed(2)),
+                    y: Number(y.toFixed(2)),
+                    ...stored
+                });
+                campusEditMode = null;
+                renderCampusMap();
+                updateCampusButtons();
+                return;
+            }
+
+            if (campusEditMode === 'building') {
+                buildingDraftLngLats.push(clickedLngLat);
+                refreshBuildingDraft();
+            }
+        }
+
+        function undoBuildingPoint() {
+            if (campusEditMode !== 'building' || buildingDraftLngLats.length === 0) {
+                return;
+            }
+            buildingDraftLngLats.pop();
+            refreshBuildingDraft();
+        }
+
+        function saveBuildingDraft() {
+            if (buildingDraftLngLats.length < 3) {
+                alert('建筑物轮廓至少需要 3 个顶点。');
+                return;
+            }
+            const name = prompt('请输入建筑物名称，例如：教学楼A');
+            if (!name) {
+                return;
+            }
+            const heightText = prompt('请输入建筑物高度（米）', '20');
+            const height = Number(heightText);
+            if (!Number.isFinite(height) || height <= 0) {
+                alert('建筑物高度必须是大于 0 的数字。');
+                return;
+            }
+
+            campusMap.buildings.push({
+                id: `building_${Date.now()}`,
+                name: name.trim(),
+                height,
+                polygon: buildingDraftLngLats.map(toStoredLngLat)
+            });
+            campusEditMode = null;
+            buildingDraftLngLats = [];
+            clearBuildingDraft();
+            renderCampusMap();
+            updateCampusButtons();
+        }
+
+        function cancelCampusEdit() {
+            campusEditMode = null;
+            buildingDraftLngLats = [];
+            clearBuildingDraft();
+            renderCampusMap();
+            updateCampusButtons();
+        }
+
+        function addCampusConnection() {
+            if (campusMap.points.length < 2) {
+                alert('至少需要 2 个配送点才能添加飞行连线。');
+                return;
+            }
+
+            const pointNames = campusMap.points.map(point => point.name).join('、');
+            const from = prompt(`请输入起点名称：\n${pointNames}`);
+            if (!from) {
+                return;
+            }
+            const to = prompt(`请输入终点名称：\n${pointNames}`);
+            if (!to) {
+                return;
+            }
+            const fromName = from.trim();
+            const toName = to.trim();
+            if (fromName === toName) {
+                alert('起点和终点不能相同。');
+                return;
+            }
+            if (!campusMap.points.some(point => point.name === fromName) || !campusMap.points.some(point => point.name === toName)) {
+                alert('起点或终点名称不存在，请使用已添加的配送点名称。');
+                return;
+            }
+
+            const altitudeText = prompt('请输入这条飞行连线的飞行高度（米，可留空）', '40');
+            const connection = { from: fromName, to: toName };
+            if (altitudeText && altitudeText.trim()) {
+                const altitude = Number(altitudeText);
+                if (!Number.isFinite(altitude) || altitude <= 0) {
+                    alert('飞行高度必须是大于 0 的数字，或留空。');
+                    return;
+                }
+                connection.flight_altitude = altitude;
+            }
+
+            campusMap.connections.push(connection);
+            renderCampusMap();
+        }
+
+        async function saveCampusMap() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/campus-map`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ campus_map: campusMap })
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    alert(result.message || '保存校园地图失败');
+                    return;
+                }
+                campusMap = normalizeCampusMap(result.campus_map);
+                renderCampusMap();
+                alert('校园地图已保存。');
+            } catch (error) {
+                console.error('保存校园地图失败:', error);
+                alert(`保存校园地图失败：${error.message}。${BACKEND_CONNECTION_HINT}`);
+            }
         }
         
         function updateAreaButtons() {
@@ -422,8 +878,10 @@
                     strokeColor: '#e67e22',
                     strokeWeight: 3,
                     fillColor: '#f39c12',
-                    fillOpacity: 0.14
+                    fillOpacity: 0.14,
+                    bubble: true
                 });
+                bindOverlayMapClick(draftPolygon);
                 draftPolygon.setMap(map);
                 return;
             }
@@ -433,8 +891,10 @@
                     path: drawingLngLats,
                     strokeColor: '#e67e22',
                     strokeWeight: 4,
-                    strokeStyle: 'dashed'
+                    strokeStyle: 'dashed',
+                    bubble: true
                 });
+                bindOverlayMapClick(draftLine);
                 draftLine.setMap(map);
             }
         }
@@ -463,11 +923,21 @@
         }
 
         function handleMapClick(event) {
+            const clickedLngLat = getEventLngLat(event);
+            if (!clickedLngLat || shouldSkipDuplicateMapClick(clickedLngLat)) {
+                return;
+            }
+
+            if (campusEditMode) {
+                handleCampusMapClick(event);
+                return;
+            }
+
             if (!isDrawingArea) {
                 return;
             }
 
-            drawingLngLats.push(event.lnglat);
+            drawingLngLats.push(clickedLngLat);
             refreshDraftArea();
         }
 
@@ -521,8 +991,10 @@
                 strokeColor: '#e67e22',
                 strokeWeight: 3,
                 fillColor: '#f39c12',
-                fillOpacity: 0.18
+                fillOpacity: 0.18,
+                bubble: true
             });
+            bindOverlayMapClick(serviceAreaPolygon);
             serviceAreaPolygon.setMap(map);
         }
 
@@ -714,8 +1186,10 @@
                 path: waypoints.map(w => toLngLat(w.x, w.y)),
                 strokeColor: '#3498db',
                 strokeWeight: 5,
-                strokeStyle: 'dashed'
+                strokeStyle: 'dashed',
+                bubble: true
             });
+            bindOverlayMapClick(routeLine);
             routeLine.setMap(map);
             map.setFitView([routeLine]);
         }
@@ -789,12 +1263,20 @@
             try {
                 await initMap();
                 await loadServiceArea();
+                await loadCampusMap();
                 updateAreaButtons();
+                updateCampusButtons();
                 document.getElementById('drawBtn').onclick = startDrawingArea;
                 document.getElementById('saveAreaBtn').onclick = saveServiceArea;
                 document.getElementById('undoPointBtn').onclick = undoLastPoint;
                 document.getElementById('cancelDrawBtn').onclick = cancelDrawingArea;
                 document.getElementById('clearAreaBtn').onclick = clearServiceArea;
+                document.getElementById('addCampusPointBtn').onclick = startAddCampusPoint;
+                document.getElementById('drawBuildingBtn').onclick = startDrawBuilding;
+                document.getElementById('undoBuildingPointBtn').onclick = undoBuildingPoint;
+                document.getElementById('cancelCampusEditBtn').onclick = cancelCampusEdit;
+                document.getElementById('addConnectionBtn').onclick = addCampusConnection;
+                document.getElementById('saveCampusMapBtn').onclick = saveCampusMap;
                 document.getElementById('startBtn').onclick = startFlight;
                 document.getElementById('stopBtn').onclick = stopFlight;
             } catch (error) {

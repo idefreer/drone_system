@@ -1,8 +1,5 @@
-# app.py - 无人机配送系统后端
-
 from flask import Flask, request, jsonify, send_from_directory
 try:
-    # [本次修改-依赖兜底] flask_cors 缺失时不要让后端直接无法启动。
     from flask_cors import CORS
 except ImportError:
     def CORS(app):
@@ -12,6 +9,7 @@ import sqlite3
 import os
 
 # ===== 导入配置和服务 =====
+import env_loader  # noqa: F401
 from config import Config
 from llm_service import llm_service
 from map_service import map_service
@@ -25,7 +23,6 @@ CORS(app)
 
 @app.after_request
 def add_api_cors_headers(response):
-    """为 API 增加跨域兜底，兼容 file:// 页面直接访问后端。"""
     if request.path.startswith('/api/'):
         origin = request.headers.get('Origin')
         allow_origin = '*' if not origin or origin == 'null' else origin
@@ -480,6 +477,37 @@ def delete_service_area():
     return jsonify({
         'success': True,
         'message': '配送范围已清空',
+        **build_service_area_response()
+    })
+
+
+@app.route('/api/campus-map', methods=['GET'])
+def get_campus_map():
+    """获取校园点位、建筑物和飞行连线配置。"""
+    return jsonify({
+        'success': True,
+        'campus_map': map_service.get_campus_map()
+    })
+
+
+@app.route('/api/campus-map', methods=['POST'])
+def save_campus_map():
+    """保存校园点位、建筑物和飞行连线配置。"""
+    data = request.get_json(silent=True) or {}
+    campus_map = data.get('campus_map', data)
+
+    try:
+        saved_map = map_service.save_campus_map(campus_map)
+    except Exception as exc:
+        return jsonify({
+            'success': False,
+            'message': f'保存校园地图失败: {exc}'
+        }), 400
+
+    return jsonify({
+        'success': True,
+        'message': '校园地图已保存',
+        'campus_map': saved_map,
         **build_service_area_response()
     })
 

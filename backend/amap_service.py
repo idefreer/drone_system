@@ -5,6 +5,7 @@ try:
     import requests
 except ImportError:
     requests = None
+import env_loader  # noqa: F401
 from config import Config
 
 

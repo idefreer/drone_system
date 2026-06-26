@@ -1,6 +1,7 @@
 {
-  "name": "校园地图",
-  "description": "校园配送点位配置",
+  "name": "校园配送地图",
+  "description": "校园配送点位、建筑物与飞行连线配置",
   "points": [],
-  "connections": []
+  "connections": [],
+  "buildings": []
 }
