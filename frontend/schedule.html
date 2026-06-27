@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>调度演示 - 无人机医药配送</title>
+    <meta http-equiv="refresh" content="0; url=order.html">
+    <title>发起配送 - 无人机医药配送</title>
+    <script>
+        window.location.replace('order.html');
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Microsoft YaHei', sans-serif; background: linear-gradient(180deg, #edf4ff 0%, #f7fbff 45%, #eef6f1 100%); color: #243447; }
@@ -61,12 +65,21 @@
         <div class="logo">🍃 无人机医药配送</div>
         <div class="nav-links">
             <a href="index.html">首页</a>
-            <a href="order.html">发起配送</a>
-            <a href="schedule.html" class="active">调度演示</a>
+            <a href="order.html" class="active">发起配送</a>
             <a href="monitor.html">实时监控</a>
             <a href="history.html">历史记录</a>
         </div>
     </nav>
+    <div class="container">
+        <div class="control-panel">
+            调度功能已整合到“发起配送”页面，正在跳转...
+            <a href="order.html">立即前往</a>
+        </div>
+    </div>
+    <script>
+        window.location.replace('order.html');
+    </script>
+    <template style="display:none">
     <div class="container">
         <div class="stats-grid">
             <div class="stat-card"><h3>等待配送</h3><div class="number" id="waitingCount">0</div></div>
@@ -79,9 +92,9 @@
             <textarea
                 id="naturalLanguageInput"
                 class="nl-input"
-                placeholder="例如：请优先配送教学楼和图书馆，其他任务按距离最短规划；高优先级订单必须先处理。"
+                placeholder="例如：请优先配送教学楼和图书馆，其他任务按距离最短规划；紧急度 10 的订单必须先处理。"
             ></textarea>
-            <div class="hint-text">不填写也可以，系统会默认按“高优先级优先 + 总距离尽量短”来规划。</div>
+            <div class="hint-text">不填写也可以，系统会默认按“紧急度数字越高越优先 + 总距离尽量短”来规划。</div>
             <div class="action-row">
                 <button class="btn" onclick="fetchOrders()">刷新订单</button>
                 <button class="btn" onclick="runSchedule()">运行 AI 调度</button>
@@ -182,7 +195,7 @@
         }
 
         function fillExample() {
-            document.getElementById('naturalLanguageInput').value = '请优先配送教学楼和图书馆，剩余订单按总距离最短规划；高优先级订单必须先处理。';
+            document.getElementById('naturalLanguageInput').value = '请优先配送教学楼和图书馆，剩余订单按总距离最短规划；紧急度 10 的订单必须先处理。';
             setStatus('已填入示例要求，可以直接运行 AI 调度。');
         }
 
@@ -277,5 +290,6 @@
 
         fetchOrders();
     </script>
+    </template>
 </body>
 </html>

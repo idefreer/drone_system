@@ -22,7 +22,6 @@ class GeneticPlanner:
         self.mutation_rate = mutation_rate
         self.lam = lam
         self.flight_altitude_limit = flight_altitude_limit
-        self.priority_values = {"高": 3, "中": 2, "低": 1}
 
     def plan_route(
         self,
@@ -226,14 +225,13 @@ class GeneticPlanner:
         penalty = 0
         total = len(order)
         for index, task in enumerate(order):
-            priority = self._task_priority(task, priority_constraints)
-            value = self.priority_values.get(priority, 2)
-            penalty += (total - index) * (4 - value)
+            value = self._task_priority(task, priority_constraints)
+            penalty += (total - index) * (11 - value)
 
         for earlier_index, earlier_task in enumerate(order):
-            earlier_value = self.priority_values.get(self._task_priority(earlier_task, priority_constraints), 2)
+            earlier_value = self._task_priority(earlier_task, priority_constraints)
             for later_task in order[earlier_index + 1:]:
-                later_value = self.priority_values.get(self._task_priority(later_task, priority_constraints), 2)
+                later_value = self._task_priority(later_task, priority_constraints)
                 if earlier_value < later_value:
                     penalty += total * (later_value - earlier_value)
 
@@ -244,9 +242,14 @@ class GeneticPlanner:
         return self._normalize_priority(priority_constraints.get(location) or task.get("priority"))
 
     def _normalize_priority(self, priority):
-        if priority in self.priority_values:
-            return priority
-        return "中"
+        legacy_map = {"高": 10, "中": 5, "低": 1}
+        if priority in legacy_map:
+            return legacy_map[priority]
+        try:
+            value = int(priority)
+        except (TypeError, ValueError):
+            return 5
+        return max(1, min(10, value))
 
     def _build_flight_path(self, waypoints, obstacle_buildings):
         flight_path = []
@@ -427,8 +430,8 @@ class GeneticPlanner:
 
     def _build_reason(self, task, effective_priority, priority_constraints):
         if task.get("location") in priority_constraints:
-            return f"LLM 解析该地点为{effective_priority}优先级，GA 综合距离和优先级惩罚后排序。"
-        return f"沿用订单{effective_priority}优先级，GA 综合距离和优先级惩罚后排序。"
+            return f"LLM 解析该地点紧急度为 {effective_priority}/10，GA 综合距离和优先级惩罚后排序。"
+        return f"沿用订单紧急度 {effective_priority}/10，GA 综合距离和优先级惩罚后排序。"
 
     def _get_depot_name(self, map_points):
         for point in map_points or []:

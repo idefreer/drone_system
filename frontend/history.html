@@ -18,10 +18,7 @@
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 1rem; border-bottom: 1px solid #ddd; text-align: left; }
         th { background: #f8f9fa; }
-        .priority-badge { padding: 0.3rem 0.8rem; border-radius: 20px; color: white; font-size: 0.8rem; }
-        .priority-badge.high { background: #e74c3c; }
-        .priority-badge.medium { background: #f39c12; }
-        .priority-badge.low { background: #27ae60; }
+        .priority-badge { padding: 0.3rem 0.8rem; border-radius: 20px; color: white; font-size: 0.8rem; display: inline-flex; min-width: 34px; justify-content: center; }
         .status-badge { padding: 0.3rem 0.8rem; border-radius: 20px; background: #d4edda; color: #155724; }
         .btn { background: #3498db; color: white; padding: 0.5rem 1rem; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 1rem; }
         .footer { background: #2c3e50; color: white; text-align: center; padding: 2rem; margin-top: 3rem; }
@@ -37,7 +34,6 @@
         <div class="nav-links">
             <a href="index.html">首页</a>
             <a href="order.html">发起配送</a>
-            <a href="schedule.html">调度演示</a>
             <a href="monitor.html">实时监控</a>
             <a href="history.html" class="active">历史记录</a>
         </div>
@@ -62,12 +58,24 @@
                 if(data.success && data.orders.length>0) {
                     tbody.innerHTML = '';
                     data.orders.forEach(o=>{
-                        const cls = o.priority==='高'?'high':(o.priority==='中'?'medium':'low');
-                        tbody.innerHTML += `<tr><td>${o.create_time||'未知'}</td><td>${o.medicine}</td><td>${o.location}</td><td><span class="priority-badge ${cls}">${o.priority}</span></td><td><span class="status-badge">${o.status}</span></td></tr>`;
+                        const priority = normalizePriority(o.priority);
+                        tbody.innerHTML += `<tr><td>${o.create_time||'未知'}</td><td>${o.medicine}</td><td>${o.location}</td><td><span class="priority-badge" style="background:${priorityColor(priority)}">${priority}</span></td><td><span class="status-badge">${o.status}</span></td></tr>`;
                     });
                 } else { tbody.innerHTML = '<tr><td colspan="5">暂无历史记录</td></tr>'; }
             } catch(e) { document.getElementById('historyBody').innerHTML = '<tr><td colspan="5">连接失败</td></tr>'; }
         }
+
+        function normalizePriority(priority) {
+            const legacyMap = { '高': 10, '中': 5, '低': 1 };
+            const rawValue = legacyMap[priority] || Number(priority) || 5;
+            return Math.max(1, Math.min(10, rawValue));
+        }
+
+        function priorityColor(priority) {
+            const hue = 130 - ((priority - 1) / 9) * 130;
+            return `hsl(${hue}, 72%, 42%)`;
+        }
+
         loadHistory();
     </script>
 </body>

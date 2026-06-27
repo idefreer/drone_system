@@ -41,6 +41,33 @@ def add_api_cors_headers(response):
 # [本次修改-路径修正] 把数据库路径固定到 backend 目录下，避免从别的目录启动时找不到文件。
 DATABASE = os.path.join(os.path.dirname(__file__), 'orders.db')
 
+
+def normalize_priority(priority, default='5'):
+    """把旧的高/中/低和新的 1-10 优先级统一成字符串数字。"""
+    legacy_map = {'高': '10', '中': '5', '低': '1'}
+    if priority in legacy_map:
+        return legacy_map[priority]
+
+    try:
+        value = int(priority)
+    except (TypeError, ValueError):
+        value = int(default)
+
+    value = max(1, min(10, value))
+    return str(value)
+
+
+def priority_sort_sql():
+    return '''
+        CASE priority
+            WHEN '高' THEN 10
+            WHEN '中' THEN 5
+            WHEN '低' THEN 1
+            ELSE CAST(priority AS INTEGER)
+        END DESC,
+        id ASC
+    '''
+
 def get_db():
     """获取数据库连接"""
     conn = sqlite3.connect(DATABASE)
@@ -74,27 +101,17 @@ def fetch_orders(status=None):
     conn = get_db()
     cursor = conn.cursor()
     if status:
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT * FROM orders
             WHERE status = ?
             ORDER BY
-                CASE priority
-                    WHEN '高' THEN 1
-                    WHEN '中' THEN 2
-                    WHEN '低' THEN 3
-                END,
-                id ASC
+                {priority_sort_sql()}
         ''', (status,))
     else:
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT * FROM orders
             ORDER BY
-                CASE priority
-                    WHEN '高' THEN 1
-                    WHEN '中' THEN 2
-                    WHEN '低' THEN 3
-                END,
-                id ASC
+                {priority_sort_sql()}
         ''')
     rows = cursor.fetchall()
     conn.close()
@@ -205,59 +222,84 @@ def create_order():
     
     if not data:
         return jsonify({'success': False, 'message': '没有接收到数据'}), 400
-    
-    medicine = data.get('medicine', '')
-    location = data.get('location', '')
-    priority = data.get('priority', '低')
-    notes = data.get('notes', '')
+
+    raw_orders = data.get('orders')
+    if raw_orders is None:
+        raw_orders = [data]
+
+    if not isinstance(raw_orders, list) or not raw_orders:
+        return jsonify({'success': False, 'message': '请至少提交一个配送任务'}), 400
+
+    normalized_orders = []
+    location_geocodes = []
     create_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    if not medicine or not location:
-        return jsonify({'success': False, 'message': '请填写完整的药品和配送地点信息'}), 400
+    for index, item in enumerate(raw_orders, start=1):
+        if not isinstance(item, dict):
+            return jsonify({'success': False, 'message': f'第 {index} 个配送任务格式不正确'}), 400
 
-    location_context = resolve_location_context(location)
-    if map_service.has_service_area() and not is_location_within_service_area(location_context):
-        return jsonify({
-            'success': False,
-            'message': f'当前配送范围未覆盖“{location}”，请先到实时监控页重新圈定范围'
-        }), 400
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO orders (medicine, location, priority, notes, create_time)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (medicine, location, priority, notes, create_time))
-    conn.commit()
-    new_id = cursor.lastrowid
-    conn.close()
+        medicine = (item.get('medicine') or '').strip()
+        location = (item.get('location') or '').strip()
+        priority = normalize_priority(item.get('priority', '5'))
+        notes = (item.get('notes') or data.get('notes') or '').strip()
 
-    # [高德接入-修改] 创建订单后，尝试把用户填写的地址转成高德经纬度。
-    # [高德接入-修改] 这里不影响订单主流程：就算高德没配置或请求失败，订单也照常创建成功。
-    geocode_result = location_context.get('geocode_result') if location_context else None
-    location_geocode = None
-    if geocode_result and geocode_result.get('success'):
-        location_geocode = {
-            'address': geocode_result.get('address'),
-            'location': geocode_result.get('location'),
-            'longitude': geocode_result.get('longitude'),
-            'latitude': geocode_result.get('latitude')
-        }
-    
-    return jsonify({
-        'success': True,
-        'message': '订单创建成功',
-        'order': {
-            'id': new_id,
+        if not medicine or not location:
+            return jsonify({'success': False, 'message': f'第 {index} 个配送任务缺少药品或配送地点'}), 400
+
+        location_context = resolve_location_context(location)
+        if map_service.has_service_area() and not is_location_within_service_area(location_context):
+            return jsonify({
+                'success': False,
+                'message': f'当前配送范围未覆盖“{location}”，请先到实时监控页重新圈定范围'
+            }), 400
+
+        geocode_result = location_context.get('geocode_result') if location_context else None
+        location_geocode = None
+        if geocode_result and geocode_result.get('success'):
+            location_geocode = {
+                'address': geocode_result.get('address'),
+                'location': geocode_result.get('location'),
+                'longitude': geocode_result.get('longitude'),
+                'latitude': geocode_result.get('latitude')
+            }
+        location_geocodes.append(location_geocode)
+        normalized_orders.append({
             'medicine': medicine,
             'location': location,
             'priority': priority,
             'notes': notes,
+            'create_time': create_time,
+        })
+
+    conn = get_db()
+    cursor = conn.cursor()
+    created_orders = []
+    for item in normalized_orders:
+        cursor.execute('''
+            INSERT INTO orders (medicine, location, priority, notes, create_time)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (item['medicine'], item['location'], item['priority'], item['notes'], item['create_time']))
+        new_id = cursor.lastrowid
+        created_orders.append({
+            'id': new_id,
+            'medicine': item['medicine'],
+            'location': item['location'],
+            'priority': item['priority'],
+            'notes': item['notes'],
             'status': '等待中',
-            'create_time': create_time
-        },
-        # [高德接入-修改] 如果高德成功解析地址，这里会把经纬度一起返回给前端。
-        'location_geocode': location_geocode,
+            'create_time': item['create_time']
+        })
+    conn.commit()
+    conn.close()
+    
+    first_order = created_orders[0]
+    return jsonify({
+        'success': True,
+        'message': f'已创建 {len(created_orders)} 个配送任务',
+        'order': first_order,
+        'orders': created_orders,
+        'location_geocode': location_geocodes[0] if location_geocodes else None,
+        'location_geocodes': location_geocodes,
         'service_area': build_service_area_response()
     })
 

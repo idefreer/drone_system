@@ -57,7 +57,7 @@ class LLMService:
             return fallback
 
     def _build_priority_prompt(self, tasks, map_points, natural_language_input):
-        natural_language_text = natural_language_input.strip() or "默认策略：沿用订单优先级，高优先级优先。"
+        natural_language_text = natural_language_input.strip() or "默认策略：沿用订单紧急度，数字越高越优先。"
         payload = {
             "instruction": natural_language_text,
             "tasks": self._build_prompt_tasks(tasks),
@@ -68,9 +68,9 @@ class LLMService:
         return (
             "你只负责解析无人机配送任务的语义优先级，不要规划路线，不要排序。\n"
             "返回纯JSON，不要markdown，不要代码块，不要解释。\n"
-            "优先级只能是：高、中、低。\n"
+            "优先级只能是 1 到 10 的整数，数字越高表示越紧急。\n"
             "必须为每个任务地点都给出 priority_constraints；地点名只能来自 tasks 的 location。\n"
-            "如果用户没有特别说明某地点，就沿用该订单原始优先级。\n"
+            "如果用户没有特别说明某地点，就沿用该订单原始紧急度。\n"
             "只返回这个结构："
             '{"reasoning":"1-2句话说明依据",'
             '"natural_language_understanding":{"raw_instruction":"","recognized_locations":[],"priority_policy":"","special_requirements":[]},'
@@ -131,18 +131,26 @@ class LLMService:
             location_index = text.find(location)
             window = text[max(0, location_index - 8): location_index + len(location) + 12]
             if any(keyword in window for keyword in ("急", "优先", "先送", "先去", "马上", "立刻")):
-                constraints[location] = "高"
+                constraints[location] = "10"
             if any(keyword in window for keyword in ("不急", "最后", "晚点", "低优先")):
-                constraints[location] = "低"
+                constraints[location] = "1"
 
         return {
-            "reasoning": "按订单原始优先级生成约束；自然语言中明确提到的紧急或延后地点会被本地规则修正。",
+            "reasoning": "按订单原始紧急度生成约束；自然语言中明确提到的紧急或延后地点会被本地规则修正。",
             "natural_language_understanding": analysis,
             "priority_constraints": constraints,
         }
 
     def _normalize_priority(self, priority):
-        return priority if priority in {"高", "中", "低"} else "中"
+        legacy_map = {"高": "10", "中": "5", "低": "1"}
+        if priority in legacy_map:
+            return legacy_map[priority]
+        try:
+            value = int(priority)
+        except (TypeError, ValueError):
+            value = 5
+        value = max(1, min(10, value))
+        return str(value)
 
     def plan_route(self, tasks, map_points, natural_language_input=""):
         """[本次修改-自然语言规划] 两阶段方案：豆包只排订单顺序，路线细节由后端本地计算。"""
@@ -183,7 +191,7 @@ class LLMService:
 
     def _build_prompt(self, tasks, map_points, natural_language_input):
         """[本次修改-两阶段规划] 豆包只返回订单顺序与自然语言理解，最大限度缩短响应时间。"""
-        natural_language_text = natural_language_input.strip() or "默认策略：高优先级优先，其次总距离最短。"
+        natural_language_text = natural_language_input.strip() or "默认策略：紧急度数字高的任务优先，其次总距离最短。"
         prompt_payload = {
             "instruction": natural_language_text,
             "points": self._build_prompt_points(tasks, map_points),
@@ -193,7 +201,7 @@ class LLMService:
         prompt = (
             "你负责给订单排序。返回纯JSON，不要markdown，不要代码块，不要解释。\n"
             "规则:"
-            "1. 优先级高>中>低;"
+            "1. 紧急度 10>9>...>1;"
             "2. 若 instruction 提到某地点，则在不违反优先级前提下优先;"
             "3. 尽量让相邻地点距离更短;"
             "4. 只能使用 tasks 里的订单 id。\n"
@@ -497,11 +505,11 @@ class LLMService:
                 special_requirements.append("要求任务后返回起点")
 
         if ordered_location_names:
-            priority_policy = f"高优先级优先，同时优先关注用户提到的地点：{'、'.join(ordered_location_names)}"
+            priority_policy = f"紧急度数字越高越优先，同时优先关注用户提到的地点：{'、'.join(ordered_location_names)}"
         elif text:
-            priority_policy = "高优先级优先，并尽量满足用户的自然语言调度要求"
+            priority_policy = "紧急度数字越高越优先，并尽量满足用户的自然语言调度要求"
         else:
-            priority_policy = "高优先级优先，其次按距离缩短总航程"
+            priority_policy = "紧急度数字越高越优先，其次按距离缩短总航程"
 
         return {
             "raw_instruction": text,
@@ -511,9 +519,8 @@ class LLMService:
         }
 
     def _task_sort_key(self, task, current_name, point_lookup, analysis):
-        """[本次修改-本地兜底] 按“任务优先级 > 用户点名地点 > 当前点距离”排序。"""
+        """[本次修改-本地兜底] 按“任务紧急度 > 用户点名地点 > 当前点距离”排序。"""
         recognized_locations = analysis.get("recognized_locations", [])
-        priority_rank = {"高": 0, "中": 1, "低": 2}
         default_rank = len(recognized_locations) + 1
 
         if task["location"] in recognized_locations:
@@ -523,7 +530,7 @@ class LLMService:
 
         distance_rank = self._distance_between_names(current_name, task["location"], point_lookup)
         return (
-            priority_rank.get(task["priority"], 9),
+            10 - int(self._normalize_priority(task.get("priority"))),
             location_rank,
             distance_rank,
             task["id"],
@@ -531,7 +538,7 @@ class LLMService:
 
     def _build_local_reason(self, task, analysis):
         """[本次修改-本地兜底] 给本地规划生成可读解释，便于前端展示。"""
-        reason_parts = [f"{task['priority']}优先级任务"]
+        reason_parts = [f"紧急度 {self._normalize_priority(task.get('priority'))}/10"]
         recognized_locations = analysis.get("recognized_locations", [])
         if task["location"] in recognized_locations:
             reason_parts.append("用户在自然语言中明确提到了该地点")

@@ -153,6 +153,115 @@
         .submit-btn:hover {
             background-color: #2980b9;
         }
+
+        .submit-btn.secondary {
+            background-color: #16a085;
+        }
+
+        .submit-btn.secondary:hover {
+            background-color: #12806a;
+        }
+
+        .submit-btn.muted {
+            background-color: #7f8c8d;
+        }
+
+        .submit-btn.muted:hover {
+            background-color: #667273;
+        }
+
+        .button-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.8rem;
+        }
+
+        .task-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 0.8rem;
+        }
+
+        .task-card {
+            border: 1px solid #dce6f0;
+            border-radius: 8px;
+            padding: 0.9rem;
+            background: #fbfdff;
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .task-card.disabled {
+            opacity: 0.48;
+            background: #f0f3f6;
+        }
+
+        .task-card-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        .task-card-title label {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .task-priority-row {
+            display: grid;
+            grid-template-columns: 1fr 76px;
+            gap: 0.55rem;
+            align-items: center;
+            color: #5d6d7e;
+            font-size: 0.92rem;
+        }
+
+        .task-card input,
+        .task-card textarea {
+            width: 100%;
+            padding: 0.65rem;
+            border: 1px solid #ccd8e4;
+            border-radius: 6px;
+            font-size: 0.96rem;
+        }
+
+        .route-result {
+            margin-top: 1.3rem;
+            padding: 1rem;
+            border-radius: 8px;
+            background: #f7fbff;
+            border: 1px solid #d6e9fb;
+            line-height: 1.7;
+        }
+
+        .route-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.8rem;
+        }
+
+        .route-table th,
+        .route-table td {
+            padding: 0.65rem;
+            border-bottom: 1px solid #e1e8ef;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .priority-badge {
+            display: inline-flex;
+            min-width: 34px;
+            justify-content: center;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            color: white;
+            font-size: 0.86rem;
+        }
         
         /* 提示信息 */
         .alert {
@@ -196,6 +305,13 @@
         .service-area-tip strong {
             color: #163857;
         }
+
+        .hint-text {
+            margin: -0.2rem 0 0.8rem;
+            color: #5d6d7e;
+            font-size: 0.92rem;
+            line-height: 1.5;
+        }
         
         .footer {
             background-color: #2c3e50;
@@ -216,6 +332,10 @@
                 width: 100%;
                 gap: 0.5rem;
             }
+
+            .button-row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -226,7 +346,6 @@
         <div class="nav-links">
             <a href="index.html">首页</a>
             <a href="order.html" class="active">发起配送</a>
-            <a href="schedule.html">调度演示</a>
             <a href="monitor.html">实时监控</a>
             <a href="history.html">历史记录</a>
         </div>
@@ -240,42 +359,29 @@
             <div id="alertMessage" class="alert"></div>
             <div id="serviceAreaTip" class="service-area-tip" style="display:none;"></div>
             
-            <!-- 表单 -->
-            <form id="orderForm">
-                <div class="form-group">
-                    <label>药品名称 *</label>
-                    <input type="text" id="medicineName" placeholder="例如：布洛芬、创可贴" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>配送地点 *</label>
-                    <select id="deliveryLocation" required>
-                        <option value="">请选择配送地点</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>紧急程度 *</label>
-                    <div class="priority-options">
-                        <label class="priority-option">
-                            <input type="radio" name="priority" value="高" checked> 🔴 高（危及生命）
-                        </label>
-                        <label class="priority-option">
-                            <input type="radio" name="priority" value="中"> 🟡 中（明显不适）
-                        </label>
-                        <label class="priority-option">
-                            <input type="radio" name="priority" value="低"> 🟢 低（轻微不适）
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>备注信息（选填）</label>
-                    <textarea id="notes" rows="3" placeholder="例如：请尽快送达，在宿舍楼下等待"></textarea>
-                </div>
-                
-                <button type="submit" class="submit-btn">📦 提交配送请求</button>
-            </form>
+            <div class="form-group">
+                <label>默认药品名称 *</label>
+                <input type="text" id="defaultMedicine" placeholder="例如：急救包、布洛芬、创可贴">
+            </div>
+
+            <div class="form-group">
+                <label>选择配送点与紧急度</label>
+                <div class="hint-text">勾选需要配送的地点，并为每个地点设置 1-10 的紧急度，数字越高表示越紧急。</div>
+                <div id="locationTaskList" class="task-list">正在加载可配送点...</div>
+            </div>
+
+            <div class="form-group">
+                <label>自然语言调度要求（选填）</label>
+                <textarea id="naturalLanguageInput" rows="3" placeholder="例如：主楼有急救病人，请优先先送；图书馆不急可以最后。"></textarea>
+            </div>
+
+            <div class="button-row">
+                <button type="button" id="submitOrdersBtn" class="submit-btn">📦 提交选中配送</button>
+                <button type="button" id="submitAndPlanBtn" class="submit-btn secondary">🚁 提交并立即规划</button>
+                <button type="button" id="planExistingBtn" class="submit-btn muted">🧠 规划等待任务</button>
+            </div>
+
+            <div id="routeResult" class="route-result" style="display:none;"></div>
         </div>
     </div>
 
@@ -285,16 +391,17 @@
     </footer>
 
     <script>
-        // 获取表单元素
-        const form = document.getElementById('orderForm');
         const alertDiv = document.getElementById('alertMessage');
         const serviceAreaTip = document.getElementById('serviceAreaTip');
-        const deliveryLocationSelect = document.getElementById('deliveryLocation');
+        const locationTaskList = document.getElementById('locationTaskList');
+        const routeResult = document.getElementById('routeResult');
 
         // 后端地址
         const API_BASE_URL = window.location.protocol === 'file:'
             ? 'http://127.0.0.1:5000'
             : window.location.origin;
+
+        let serviceAreaMeta = null;
 
         function showAlert(type, message, timeout = 5000) {
             alertDiv.className = `alert ${type}`;
@@ -308,6 +415,12 @@
             }
         }
 
+        function priorityColor(priority) {
+            const value = Number(priority) || 1;
+            const hue = 130 - ((value - 1) / 9) * 130;
+            return `hsl(${hue}, 72%, 42%)`;
+        }
+
         async function loadServiceArea() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/service-area`);
@@ -316,114 +429,207 @@
                     return;
                 }
 
-                const allowedLocations = new Set(result.allowed_locations || []);
-                const serviceAreaActive = Boolean(result.active);
+                serviceAreaMeta = result;
+                renderLocationTasks(result);
 
-                Array.from(deliveryLocationSelect.options).forEach(option => {
-                    if (!option.value) {
-                        return;
-                    }
-
-                    if (!option.dataset.originalText) {
-                        option.dataset.originalText = option.textContent;
-                    }
-
-                    const isAllowed = !serviceAreaActive || allowedLocations.has(option.value);
-                    option.disabled = !isAllowed;
-                    option.textContent = isAllowed
-                        ? option.dataset.originalText
-                        : `${option.dataset.originalText}（范围外）`;
-                });
-
-                if (serviceAreaActive) {
+                if (result.active) {
                     serviceAreaTip.style.display = 'block';
                     serviceAreaTip.innerHTML = `
                         <strong>当前已启用配送范围</strong><br>
                         仅可下单到：${result.allowed_locations.length ? result.allowed_locations.join('、') : '暂无可配送点'}<br>
                         如需修改，请前往“实时监控”页面重新圈定范围。
                     `;
-
-                    if (deliveryLocationSelect.value && !allowedLocations.has(deliveryLocationSelect.value)) {
-                        deliveryLocationSelect.value = '';
-                    }
                 } else {
-                    serviceAreaTip.style.display = 'none';
+                    serviceAreaTip.style.display = 'block';
+                    serviceAreaTip.innerHTML = '<strong>当前未限制配送范围</strong><br>可以选择所有已标定配送点。';
                 }
             } catch (error) {
                 console.error('加载配送范围失败:', error);
+                locationTaskList.innerHTML = '加载可配送点失败，请确认后端已启动。';
             }
         }
 
-        // 表单提交事件
-        form.addEventListener('submit', async function(event) {
-            // 阻止表单默认提交
-            event.preventDefault();
-            
-            // 获取表单数据
-            const medicineName = document.getElementById('medicineName').value;
-            const location = document.getElementById('deliveryLocation').value;
-            const priority = document.querySelector('input[name="priority"]:checked').value;
-            const notes = document.getElementById('notes').value;
+        function renderLocationTasks(meta) {
+            const allLocations = meta.all_locations || [];
+            const allowedLocations = new Set(meta.allowed_locations || []);
+            const serviceAreaActive = Boolean(meta.active);
+            locationTaskList.innerHTML = '';
 
-            if (deliveryLocationSelect.selectedOptions[0]?.disabled) {
-                showAlert('error', '❌ 当前选择的配送地点不在已圈定的配送范围内，请重新选择。');
+            if (allLocations.length === 0) {
+                locationTaskList.innerHTML = '暂无可配送点，请先到实时监控页标定校园地图。';
                 return;
             }
-            
-            // 简单验证
-            if (!medicineName || !location) {
-                showAlert('error', '❌ 请填写完整信息！', 3000);
-                return;
+
+            allLocations.forEach(location => {
+                const isAllowed = !serviceAreaActive || allowedLocations.has(location);
+                const card = document.createElement('div');
+                card.className = `task-card${isAllowed ? '' : ' disabled'}`;
+                card.dataset.location = location;
+                card.innerHTML = `
+                    <div class="task-card-title">
+                        <label>
+                            <input type="checkbox" class="location-check" ${isAllowed ? '' : 'disabled'}>
+                            <span>${location}</span>
+                        </label>
+                        ${isAllowed ? '' : '<span>范围外</span>'}
+                    </div>
+                    <input type="text" class="task-medicine" placeholder="药品名称，留空使用默认" ${isAllowed ? '' : 'disabled'}>
+                    <div class="task-priority-row">
+                        <label>紧急度 1-10</label>
+                        <input type="number" class="task-priority" min="1" max="10" value="5" ${isAllowed ? '' : 'disabled'}>
+                    </div>
+                    <textarea class="task-notes" rows="2" placeholder="备注（选填）" ${isAllowed ? '' : 'disabled'}></textarea>
+                `;
+                locationTaskList.appendChild(card);
+            });
+        }
+
+        function collectSelectedOrders() {
+            const defaultMedicine = document.getElementById('defaultMedicine').value.trim();
+            const orders = [];
+            document.querySelectorAll('.task-card').forEach(card => {
+                const checked = card.querySelector('.location-check')?.checked;
+                if (!checked) {
+                    return;
+                }
+                const location = card.dataset.location;
+                const medicine = card.querySelector('.task-medicine').value.trim() || defaultMedicine;
+                const priorityValue = Math.max(1, Math.min(10, Number(card.querySelector('.task-priority').value) || 5));
+                const notes = card.querySelector('.task-notes').value.trim();
+                if (!medicine) {
+                    throw new Error(`请为“${location}”填写药品名称，或填写默认药品名称。`);
+                }
+                orders.push({
+                    medicine,
+                    location,
+                    priority: String(priorityValue),
+                    notes
+                });
+            });
+            return orders;
+        }
+
+        function clearSelection(clearDefault = true) {
+            document.querySelectorAll('.task-card').forEach(card => {
+                const check = card.querySelector('.location-check');
+                if (check) check.checked = false;
+                card.querySelector('.task-medicine').value = '';
+                card.querySelector('.task-priority').value = '5';
+                card.querySelector('.task-notes').value = '';
+            });
+            if (clearDefault) {
+                document.getElementById('defaultMedicine').value = '';
             }
-            
-            // 准备发送到后端的数据
-            const orderData = {
-                medicine: medicineName,
-                location: location,
-                priority: priority,
-                notes: notes
-            };
-            
-            console.log('发送订单:', orderData);
-            
+        }
+
+        async function submitOrders(shouldPlanAfterSubmit = false) {
+            let orders;
             try {
-                // 显示"提交中"状态
+                orders = collectSelectedOrders();
+            } catch (error) {
+                showAlert('error', error.message);
+                return;
+            }
+
+            if (orders.length === 0) {
+                showAlert('error', '❌ 请至少选择一个配送点。');
+                return;
+            }
+
+            console.log('发送订单:', orders);
+
+            try {
                 showAlert('info', '⏳ 提交中...', 0);
                 
-                // 发送请求到后端
                 const response = await fetch(`${API_BASE_URL}/api/orders`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(orderData)
+                    body: JSON.stringify({ orders })
                 });
                 
                 const result = await response.json();
                 console.log('后端返回:', result);
                 
                 if (result.success) {
-                    // 提交成功
-                    showAlert('success', `✅ 配送请求成功！订单号：${result.order.id}`);
-                    
-                    // 清空表单
-                    form.reset();
-                    // 重置优先级为高
-                    document.querySelector('input[name="priority"][value="高"]').checked = true;
+                    showAlert('success', `✅ 已创建 ${result.orders?.length || orders.length} 个配送任务`);
+                    clearSelection(false);
                     await loadServiceArea();
+                    if (shouldPlanAfterSubmit) {
+                        await runSchedule();
+                    }
                 } else {
-                    // 提交失败
                     showAlert('error', `❌ 提交失败：${result.message || '请重试'}`);
                 }
             } catch (error) {
-                // 网络错误
                 const backendHint = window.location.protocol === 'file:'
                     ? '请确保后端服务器已启动 (http://127.0.0.1:5000)'
                     : `请确认当前页面通过 ${window.location.origin} 打开，并且后端服务器已启动`;
                 showAlert('error', `❌ 网络错误：${error.message}，${backendHint}`);
                 console.error('Error:', error);
             }
-        });
+        }
+
+        async function runSchedule() {
+            const naturalLanguageInput = document.getElementById('naturalLanguageInput').value.trim();
+            routeResult.style.display = 'block';
+            routeResult.innerHTML = '正在规划路线...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/plan-route`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ natural_language_input: naturalLanguageInput })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    routeResult.innerHTML = `规划失败：${data.message || '未知错误'}`;
+                    return;
+                }
+                renderRouteResult(data.route, naturalLanguageInput);
+            } catch (error) {
+                routeResult.innerHTML = `规划请求失败：${error.message}`;
+            }
+        }
+
+        function renderRouteResult(route, naturalLanguageInput) {
+            const summary = route.route_summary || {};
+            const nl = route.natural_language_understanding || {};
+            const tasks = route.tasks_order || [];
+            const rows = tasks.map((task, index) => {
+                const priority = task.effective_priority || task.priority || '-';
+                return `
+                    <tr>
+                        <td>${task.order || index + 1}</td>
+                        <td>${task.medicine || '-'}</td>
+                        <td>${task.location}</td>
+                        <td><span class="priority-badge" style="background:${priorityColor(priority)}">${priority}</span></td>
+                        <td>${task.reason || '无'}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            routeResult.innerHTML = `
+                <strong>调度结果</strong><br>
+                总距离：${summary.total_distance ?? '?'} 米；
+                飞行高度上限：${summary.flight_altitude_limit ?? '?'} 米；
+                绕障航段：${summary.obstacle_count || 0} 段<br>
+                航点路径：${(route.waypoints || []).map(item => item.name).join(' → ') || '暂无'}<br>
+                自然语言：${nl.raw_instruction || naturalLanguageInput || '未填写，使用默认策略'}<br>
+                优先策略：${nl.priority_policy || '紧急度数字越高越优先'}<br>
+                <table class="route-table">
+                    <thead>
+                        <tr><th>顺序</th><th>药品</th><th>地点</th><th>紧急度</th><th>原因</th></tr>
+                    </thead>
+                    <tbody>${rows || '<tr><td colspan="5">暂无任务</td></tr>'}</tbody>
+                </table>
+            `;
+        }
+
+        document.getElementById('submitOrdersBtn').onclick = () => submitOrders(false);
+        document.getElementById('submitAndPlanBtn').onclick = () => submitOrders(true);
+        document.getElementById('planExistingBtn').onclick = runSchedule;
 
         loadServiceArea();
     </script>
