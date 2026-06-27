@@ -28,6 +28,122 @@ class LLMService:
         """[本次修改-豆包接入] 兼容两种调用方式：公共模型名或专属 Endpoint ID。"""
         return bool(self.api_key and (self.endpoint_id or self.model))
 
+    def parse_priorities(self, tasks, map_points, natural_language_input=""):
+        """Use LLM only for semantic priority extraction; GA handles ordering."""
+        fallback = self._build_priority_fallback(tasks, map_points, natural_language_input)
+
+        if not self.is_configured():
+            fallback["planning_basis"] = "local_priority_fallback"
+            fallback["note"] = "未配置豆包 API，已按订单优先级和本地规则生成优先级约束。"
+            return fallback
+
+        try:
+            print("[LLM] 正在解析自然语言优先级...")
+            prompt = self._build_priority_prompt(tasks, map_points, natural_language_input)
+            response = self._call_doubao(prompt)
+            parsed = self._parse_response(response)
+            normalized = self._normalize_priority_result(parsed, tasks, fallback)
+            if normalized:
+                normalized["planning_basis"] = "llm_priority"
+                normalized.setdefault("note", "LLM 已解析优先级，路线顺序由 GA 计算。")
+                return normalized
+
+            fallback["planning_basis"] = "local_priority_fallback"
+            fallback["note"] = "豆包优先级解析结果不可用，已使用本地优先级兜底。"
+            return fallback
+        except Exception as exc:
+            fallback["planning_basis"] = "local_priority_fallback"
+            fallback["note"] = f"豆包优先级解析失败，已使用本地优先级兜底：{exc}"
+            return fallback
+
+    def _build_priority_prompt(self, tasks, map_points, natural_language_input):
+        natural_language_text = natural_language_input.strip() or "默认策略：沿用订单优先级，高优先级优先。"
+        payload = {
+            "instruction": natural_language_text,
+            "tasks": self._build_prompt_tasks(tasks),
+            "points": self._build_prompt_points(tasks, map_points),
+        }
+        task_locations = [task["location"] for task in tasks]
+
+        return (
+            "你只负责解析无人机配送任务的语义优先级，不要规划路线，不要排序。\n"
+            "返回纯JSON，不要markdown，不要代码块，不要解释。\n"
+            "优先级只能是：高、中、低。\n"
+            "必须为每个任务地点都给出 priority_constraints；地点名只能来自 tasks 的 location。\n"
+            "如果用户没有特别说明某地点，就沿用该订单原始优先级。\n"
+            "只返回这个结构："
+            '{"reasoning":"1-2句话说明依据",'
+            '"natural_language_understanding":{"raw_instruction":"","recognized_locations":[],"priority_policy":"","special_requirements":[]},'
+            '"priority_constraints":{}}'
+            f"\n任务地点：{json.dumps(task_locations, ensure_ascii=False)}"
+            "\n输入数据:\n"
+            f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+        )
+
+    def _normalize_priority_result(self, parsed, tasks, fallback):
+        if not isinstance(parsed, dict):
+            return None
+
+        raw_constraints = parsed.get("priority_constraints")
+        if not isinstance(raw_constraints, dict):
+            return None
+
+        task_locations = [task["location"] for task in tasks]
+        fallback_constraints = fallback.get("priority_constraints", {})
+        constraints = {}
+        for task in tasks:
+            location = task["location"]
+            constraints[location] = self._normalize_priority(
+                raw_constraints.get(location) or fallback_constraints.get(location) or task.get("priority")
+            )
+
+        analysis = parsed.get("natural_language_understanding")
+        if not isinstance(analysis, dict):
+            analysis = fallback.get("natural_language_understanding", {})
+
+        recognized = analysis.get("recognized_locations")
+        if not isinstance(recognized, list):
+            recognized = []
+        analysis["recognized_locations"] = [
+            name for name in recognized if name in task_locations
+        ]
+        analysis.setdefault("raw_instruction", fallback.get("natural_language_understanding", {}).get("raw_instruction", ""))
+        analysis.setdefault("priority_policy", "LLM 解析自然语言优先级，GA 负责路线排序")
+        analysis.setdefault("special_requirements", [])
+
+        return {
+            "reasoning": str(parsed.get("reasoning") or fallback.get("reasoning") or ""),
+            "natural_language_understanding": analysis,
+            "priority_constraints": constraints,
+        }
+
+    def _build_priority_fallback(self, tasks, map_points, natural_language_input):
+        analysis = self._analyze_natural_language(natural_language_input, map_points)
+        constraints = {
+            task["location"]: self._normalize_priority(task.get("priority"))
+            for task in tasks
+        }
+
+        text = (natural_language_input or "").strip()
+        for location in analysis.get("recognized_locations", []):
+            if location not in constraints:
+                continue
+            location_index = text.find(location)
+            window = text[max(0, location_index - 8): location_index + len(location) + 12]
+            if any(keyword in window for keyword in ("急", "优先", "先送", "先去", "马上", "立刻")):
+                constraints[location] = "高"
+            if any(keyword in window for keyword in ("不急", "最后", "晚点", "低优先")):
+                constraints[location] = "低"
+
+        return {
+            "reasoning": "按订单原始优先级生成约束；自然语言中明确提到的紧急或延后地点会被本地规则修正。",
+            "natural_language_understanding": analysis,
+            "priority_constraints": constraints,
+        }
+
+    def _normalize_priority(self, priority):
+        return priority if priority in {"高", "中", "低"} else "中"
+
     def plan_route(self, tasks, map_points, natural_language_input=""):
         """[本次修改-自然语言规划] 两阶段方案：豆包只排订单顺序，路线细节由后端本地计算。"""
         fallback_route = self._build_local_route(tasks, map_points, natural_language_input)

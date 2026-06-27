@@ -14,6 +14,7 @@ from config import Config
 from llm_service import llm_service
 from map_service import map_service
 from amap_service import amap_service
+from genetic_planner import genetic_planner
 
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
 
@@ -355,14 +356,29 @@ def plan_route():
             'message': '地图数据未加载'
         }), 500
     
-    # 调用大模型规划路线
+    # LLM 只解析自然语言优先级，GA 负责数值排序和航线生成。
     try:
-        # [本次修改-自然语言规划] 把自然语言要求一起交给路径规划服务。
-        route = llm_service.plan_route(tasks, map_points, natural_language_input=natural_language_input)
+        priority_result = llm_service.parse_priorities(
+            tasks,
+            map_points,
+            natural_language_input=natural_language_input
+        )
+        route = genetic_planner.plan_route(
+            tasks=tasks,
+            map_points=map_points,
+            buildings=map_service.get_campus_map().get('buildings', []),
+            priority_constraints=priority_result.get('priority_constraints', {}),
+            natural_language_analysis=priority_result.get('natural_language_understanding', {})
+        )
+        route['llm_priority_reasoning'] = priority_result.get('reasoning', '')
+        route['priority_planning_basis'] = priority_result.get('planning_basis', '')
         route_note = route.get('note', '')
+        priority_note = priority_result.get('note', '')
+        if priority_note:
+            route['note'] = f'{priority_note} {route_note}'.strip()
         if excluded_count > 0:
             extra_note = f'有 {excluded_count} 个等待中订单不在当前配送范围内，已自动忽略。'
-            route['note'] = f'{route_note} {extra_note}'.strip()
+            route['note'] = f"{route.get('note', '')} {extra_note}".strip()
         route['service_area'] = {
             **service_area_meta,
             'excluded_waiting_orders': excluded_count

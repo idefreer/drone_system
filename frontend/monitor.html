@@ -164,6 +164,9 @@
         let amapConfig;
         let infoWindow;
         let routeLine;
+        let routeSegmentLines = [];
+        let routeWaypointMarkers = [];
+        let latestRouteData = null;
         let serviceAreaPolygon;
         let draftLine;
         let draftPolygon;
@@ -197,6 +200,13 @@
         function toLngLat(x, y) {
             const [lat, lng] = toLatLng(x, y);
             return [lng, lat];
+        }
+
+        function waypointToLngLat(waypoint) {
+            if (waypoint.lng != null && waypoint.lat != null) {
+                return [waypoint.lng, waypoint.lat];
+            }
+            return toLngLat(waypoint.x, waypoint.y);
         }
 
         function toXY(lat, lng) {
@@ -1267,6 +1277,12 @@
             if (routeData.route_summary) {
                 decisionHtml += `<strong>📏 路线评估：</strong><br>`;
                 decisionHtml += `总距离 ${routeData.route_summary.total_distance} 米<br>`;
+                if (routeData.route_summary.flight_altitude_limit != null) {
+                    decisionHtml += `飞行高度上限 ${routeData.route_summary.flight_altitude_limit} 米<br>`;
+                }
+                if (routeData.route_summary.obstacle_count) {
+                    decisionHtml += `需绕障航段 ${routeData.route_summary.obstacle_count} 段<br>`;
+                }
             }
 
             if (routeData.service_area?.active) {
@@ -1282,7 +1298,13 @@
             if (routeData.flight_path && routeData.flight_path.length > 0) {
                 decisionHtml += `<strong>✈️ 飞行路径：</strong><br>`;
                 routeData.flight_path.forEach((seg, i) => {
-                    decisionHtml += `${i+1}. ${seg.from} → ${seg.to} (${seg.distance}米)<br>`;
+                    const detourText = seg.requires_detour
+                        ? `，绕开：${(seg.blocking_buildings || []).join('、') || '高建筑'}`
+                        : '';
+                    const directText = seg.direct_distance != null && seg.direct_distance !== seg.distance
+                        ? `，直线 ${seg.direct_distance}米`
+                        : '';
+                    decisionHtml += `${i+1}. ${seg.from} → ${seg.to} (${seg.distance}米${directText}${detourText})<br>`;
                 });
             }
             
@@ -1303,6 +1325,7 @@
                     let routeData = data.route || data;
                     
                     if (routeData.waypoints && routeData.waypoints.length > 0) {
+                        latestRouteData = routeData;
                         waypoints = routeData.waypoints;
                         
                         // 显示豆包决策
@@ -1311,6 +1334,8 @@
                         document.getElementById('routeInfo').style.display = 'block';
                         document.getElementById('routeDetail').innerHTML = `
                             总距离: ${routeData.route_summary?.total_distance || '?'} 米<br>
+                            飞行高度上限: ${routeData.route_summary?.flight_altitude_limit ?? '?'} 米<br>
+                            绕障航段: ${routeData.route_summary?.obstacle_count || 0} 段<br>
                             航点数量: ${waypoints.length}<br>
                             路线: ${waypoints.map(w => w.name).join(' → ')}<br>
                             备注: ${routeData.note || '无'}
@@ -1333,19 +1358,105 @@
         }
         
         function drawRoute() {
+            clearRouteVisualization();
+            if (!waypoints || waypoints.length < 2) {
+                return;
+            }
+
+            const flightPath = latestRouteData?.flight_path || [];
+            const allOverlays = [];
+
+            for (let index = 0; index < waypoints.length - 1; index++) {
+                const start = waypoints[index];
+                const end = waypoints[index + 1];
+                const segment = flightPath[index] || {};
+                const requiresDetour = Boolean(segment.requires_detour);
+                const line = new AMap.Polyline({
+                    path: [waypointToLngLat(start), waypointToLngLat(end)],
+                    strokeColor: requiresDetour ? '#e74c3c' : '#3498db',
+                    strokeWeight: requiresDetour ? 6 : 5,
+                    strokeStyle: requiresDetour ? 'solid' : 'dashed',
+                    bubble: true,
+                    zIndex: requiresDetour ? 80 : 70
+                });
+                line.setExtData({
+                    name: `${start.name} → ${end.name}`,
+                    status: requiresDetour
+                        ? `需绕开 ${(segment.blocking_buildings || []).join('、') || '高建筑'}`
+                        : `巡航高度 ${segment.flight_altitude ?? latestRouteData?.route_summary?.flight_altitude_limit ?? 12} 米`
+                });
+                line.on('click', () => openRouteSegmentInfo(line, segment));
+                bindOverlayMapClick(line);
+                line.setMap(map);
+                routeSegmentLines.push(line);
+                allOverlays.push(line);
+            }
+
+            waypoints.forEach((waypoint, index) => {
+                const marker = new AMap.Marker({
+                    position: waypointToLngLat(waypoint),
+                    title: waypoint.name,
+                    content: createRouteWaypointContent(index, waypoint),
+                    offset: new AMap.Pixel(-13, -13),
+                    bubble: true,
+                    zIndex: 90
+                });
+                marker.setExtData({
+                    name: waypoint.name,
+                    status: index === 0 || index === waypoints.length - 1 ? '起降点' : `第 ${index} 个配送航点`
+                });
+                marker.on('click', () => openMarkerInfo(marker));
+                marker.setMap(map);
+                routeWaypointMarkers.push(marker);
+                allOverlays.push(marker);
+            });
+
+            map.setFitView(allOverlays, false, [70, 70, 70, 70], 17);
+        }
+
+        function clearRouteVisualization() {
             if (routeLine) {
                 routeLine.setMap(null);
+                routeLine = null;
             }
-            routeLine = new AMap.Polyline({
-                path: waypoints.map(w => toLngLat(w.x, w.y)),
-                strokeColor: '#3498db',
-                strokeWeight: 5,
-                strokeStyle: 'dashed',
-                bubble: true
-            });
-            bindOverlayMapClick(routeLine);
-            routeLine.setMap(map);
-            map.setFitView([routeLine]);
+            routeSegmentLines.forEach(line => line.setMap(null));
+            routeWaypointMarkers.forEach(marker => marker.setMap(null));
+            routeSegmentLines = [];
+            routeWaypointMarkers = [];
+        }
+
+        function createRouteWaypointContent(index, waypoint) {
+            const isDepot = index === 0 || index === waypoints.length - 1;
+            const background = isDepot ? '#16a085' : '#3498db';
+            const label = index === 0 ? '起' : (index === waypoints.length - 1 ? '返' : index);
+            return `
+                <div style="transform:translate(-50%,-50%);">
+                    <div style="width:26px;height:26px;border-radius:50%;background:${background};color:#fff;border:3px solid #fff;box-shadow:0 6px 14px rgba(0,0,0,0.22);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">${label}</div>
+                    <div style="margin-top:4px;white-space:nowrap;background:rgba(255,255,255,0.95);border:1px solid #d6e4f0;border-radius:4px;padding:2px 5px;color:#2c3e50;font-size:12px;box-shadow:0 3px 8px rgba(0,0,0,0.12);">${waypoint.name}</div>
+                </div>
+            `;
+        }
+
+        function openRouteSegmentInfo(line, segment) {
+            if (!infoWindow) {
+                return;
+            }
+            const extData = line.getExtData() || {};
+            const detourHtml = segment?.requires_detour
+                ? `<br>绕障建筑：${(segment.blocking_buildings || []).join('、') || '高建筑'}`
+                : '';
+            infoWindow.setContent(`
+                <div style="padding:6px 10px;line-height:1.7;">
+                    <strong>${extData.name}</strong><br>
+                    状态：${extData.status || '正常航段'}<br>
+                    距离：${segment?.distance ?? '?'} 米
+                    ${segment?.direct_distance != null ? `<br>直线距离：${segment.direct_distance} 米` : ''}
+                    ${detourHtml}
+                </div>
+            `);
+            const path = line.getPath();
+            const middle = path[Math.floor(path.length / 2)];
+            infoWindow.open(map, middle);
         }
         
         async function startFlight() {
